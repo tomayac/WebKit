@@ -837,7 +837,9 @@ void CrossOriginStorageRegistry::loadEntriesFromDisk()
                 continue;
             }
 
-            auto lines = String::fromUTF8(contents->span()).split('\n');
+            // Empty entries must be preserved: this is a positional format, and an entry whose
+            // attributed origin is empty would otherwise shift every field after it by one line.
+            auto lines = String::fromUTF8(contents->span()).splitAllowingEmptyEntries('\n');
             auto readLine = [&](size_t index) -> String {
                 return index < lines.size() ? lines[index] : String { };
             };

@@ -1,0 +1,9 @@
+
+PASS A default-scoped entry is disclosed to a same-site, different-origin reader
+PASS A default-scoped entry is not disclosed to a cross-site reader
+PASS A list-scoped entry is disclosed to an origin on its list
+PASS A list-scoped entry is not disclosed to an origin absent from its list
+PASS A wildcard-scoped entry whose hash is not on the Public Hash List is not disclosed cross-origin
+PASS A storing origin can always read back its own wildcard-scoped write
+PASS An entry written same-site-scoped by another site is not disclosed to this one
+

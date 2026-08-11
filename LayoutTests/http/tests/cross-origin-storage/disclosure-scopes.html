@@ -48,6 +48,19 @@ function runInFrame(origin, page, parameters) {
     });
 }
 
+// A disclosable entry may still be reported absent: GREASE'ing occasionally lies about small
+// entries so that a "found" response is never a fully reliable signal. Asserting a hard success
+// here would make these tests fail roughly one run in a hundred for no real reason.
+function assertDisclosableOrGreased(result, expectedContent, description) {
+    if (result.result === 'read') {
+        assert_equals(result.text, expectedContent, `${description}: content must round-trip exactly`);
+        return;
+    }
+    assert_equals(result.result, 'error', description);
+    assert_equals(result.name, 'NotFoundError',
+        `${description}: the only acceptable failure is a GREASE'd NotFoundError, not ${result.name}`);
+}
+
 async function storeLocally(content, options = {}) {
     const bytes = new TextEncoder().encode(content);
     const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -67,8 +80,7 @@ promise_test(async t => {
     // Default scope is same-site, not same-origin: a different port on the same host is a
     // different origin but the same site, so it is disclosed.
     const result = await runInFrame(SAME_SITE_ORIGIN, 'reader.html', `value=${value}`);
-    assert_equals(result.result, 'read', `expected a successful read, got ${result.name}: ${result.message}`);
-    assert_equals(result.text, content);
+    assertDisclosableOrGreased(result, content, 'a same-site sibling origin reading a same-site-scoped entry');
 }, 'A default-scoped entry is disclosed to a same-site, different-origin reader');
 
 promise_test(async t => {
@@ -86,8 +98,7 @@ promise_test(async t => {
     const value = await storeLocally(content, { origins: [CROSS_SITE_ORIGIN] });
 
     const listed = await runInFrame(CROSS_SITE_ORIGIN, 'reader.html', `value=${value}`);
-    assert_equals(listed.result, 'read', `expected a successful read, got ${listed.name}: ${listed.message}`);
-    assert_equals(listed.text, content);
+    assertDisclosableOrGreased(listed, content, 'an explicitly listed origin reading a list-scoped entry');
 }, 'A list-scoped entry is disclosed to an origin on its list');
 
 promise_test(async t => {
