@@ -409,6 +409,9 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
     Modules/encryptedmedia/legacy/LegacyCDMPrivate.h
     Modules/encryptedmedia/legacy/LegacyCDMPrivateClearKey.h
 
+    Modules/cross-origin-storage/CrossOriginStorageLimits.h
+    Modules/cross-origin-storage/CrossOriginStorageManager.h
+    Modules/cross-origin-storage/CrossOriginStorageRequestData.h
     Modules/fetch/FetchBodyConsumer.h
     Modules/fetch/FetchBodySource.h
     Modules/fetch/FetchHeaders.h

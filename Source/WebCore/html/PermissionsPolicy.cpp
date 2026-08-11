@@ -49,6 +49,8 @@ static ASCIILiteral toFeatureNameForLogging(PermissionsPolicy::Feature feature)
     switch (feature) {
     case PermissionsPolicy::Feature::Camera:
         return "Camera"_s;
+    case PermissionsPolicy::Feature::CrossOriginStorage:
+        return "CrossOriginStorage"_s;
     case PermissionsPolicy::Feature::Microphone:
         return "Microphone"_s;
     case PermissionsPolicy::Feature::SpeakerSelection:
@@ -107,6 +109,7 @@ static std::pair<PermissionsPolicy::Feature, StringView> readFeatureIdentifier(S
     StringView remainingValue;
 
     constexpr auto cameraToken { "camera"_s };
+    constexpr auto crossOriginStorageToken { "cross-origin-storage"_s };
     constexpr auto microphoneToken { "microphone"_s };
     constexpr auto speakerSelectionToken { "speaker-selection"_s };
     constexpr auto displayCaptureToken { "display-capture"_s };
@@ -132,7 +135,10 @@ static std::pair<PermissionsPolicy::Feature, StringView> readFeatureIdentifier(S
     constexpr auto privateTokenToken { "private-token"_s };
     constexpr auto storageAccessToken { "storage-access"_s };
 
-    if (value.startsWith(cameraToken)) {
+    if (value.startsWith(crossOriginStorageToken)) {
+        feature = PermissionsPolicy::Feature::CrossOriginStorage;
+        remainingValue = value.substring(crossOriginStorageToken.length());
+    } else if (value.startsWith(cameraToken)) {
         feature = PermissionsPolicy::Feature::Camera;
         remainingValue = value.substring(cameraToken.length());
     } else if (value.startsWith(microphoneToken)) {
@@ -214,6 +220,7 @@ static ASCIILiteral defaultAllowlistValue(PermissionsPolicy::Feature feature)
     case PermissionsPolicy::Feature::StorageAccess:
         return "*"_s;
     case PermissionsPolicy::Feature::Camera:
+    case PermissionsPolicy::Feature::CrossOriginStorage:
     case PermissionsPolicy::Feature::Microphone:
     case PermissionsPolicy::Feature::SpeakerSelection:
     case PermissionsPolicy::Feature::DisplayCapture:

@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+#
+# Copyright (C) 2026 Thomas Steiner. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+# THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+# THE POSSIBILITY OF SUCH DAMAGE.
+
+"""Refreshes WebKit's snapshot of the Cross-Origin Storage Public Hash List.
+
+The PHL is the gate that makes "*"-scoped disclosure safe: a globally-scoped entry is only ever
+disclosed outside its storing origins if its hash appears on this curated, cross-vendor,
+rolling-release allowlist of ubiquitous, corroborated digests.
+
+It is an explicitly rolling-release list, not a one-time snapshot, so this script is meant to be
+re-run on a schedule (see .github/workflows/) with its output committed, rather than run once by
+hand. "We integrated the PHL" and "we keep the PHL current" are two separate milestones.
+
+Three things about the upstream source are easy to get wrong:
+
+  * It is tracked via Git LFS, so raw.githubusercontent.com serves only a few hundred bytes of
+    pointer text, not the real multi-tens-of-MB file. The LFS media endpoint is required.
+  * The published companion checksum must be fetched and verified *before* the data is trusted,
+    so that a truncated transfer or a compromised response becomes a loud failure here rather than
+    silently-wrong data shipped to every user.
+  * The file is not one undifferentiated list. It has three sections with different adoption
+    requirements, and which ones a user agent adopts is a real policy decision, not a detail that
+    casual parsing should silently make on its own.
+"""
+
+import argparse
+import hashlib
+import os
+import re
+import sys
+import urllib.request
+
+# GitHub's LFS media endpoint. raw.githubusercontent.com would return the LFS pointer instead.
+PHL_BASE_URL = 'https://media.githubusercontent.com/media/WICG/cross-origin-storage/main/public-hash-list/implementation/data'
+PHL_DATA_URL = f'{PHL_BASE_URL}/public-hash-list.dat'
+PHL_CHECKSUM_URL = f'{PHL_BASE_URL}/public-hash-list.dat.sha256'
+
+DIGEST_PATTERN = re.compile(r'^[0-9a-f]{64}$')
+SECTION_BEGIN = re.compile(r'^//\s*===BEGIN\s+(.+?)===\s*$')
+SECTION_END = re.compile(r'^//\s*===END\s+(.+?)===\s*$')
+
+# Sections a user agent MUST treat as eligible.
+REQUIRED_SECTIONS = ('SHA-256', 'SHA-256 MANUAL')
+
+# A section a user agent SHOULD include and MAY omit. It qualifies entries on a different basis
+# than the core section's real-world-popularity bar -- "published on a recognized public model
+# hub" -- because a specific AI model build can be hugely valuable to deduplicate while appearing
+# on only a handful of sites, so it would never clear that bar. The tradeoff is coarser: it
+# discloses "this user runs in-browser AI models", not any specific site.
+#
+# WebKit includes it. Large model weights are precisely the content this feature exists for, and
+# adoption only pays off if it is uniform: an implementation that omits this section forces those
+# downloads to repeat per origin while one that includes it does not, which hands out a real,
+# uneven performance advantage and works against the PHL's purpose as a neutral resource.
+OPTIONAL_SECTIONS = ('SHA-256 HUGGING-FACE',)
+
+DIGEST_SIZE = 32
+
+
+def fetch(url):
+    with urllib.request.urlopen(url) as response:
+        return response.read()
+
+
+def parse_sections(text, sections_to_adopt):
+    """Yields the digests in the adopted sections. Comment lines carry provenance only."""
+    current_section = None
+    adopted = set()
+    seen_sections = set()
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        begin = SECTION_BEGIN.match(line)
+        if begin:
+            current_section = begin.group(1).strip()
+            seen_sections.add(current_section)
+            continue
+
+        end = SECTION_END.match(line)
+        if end:
+            current_section = None
+            continue
+
+        if line.startswith('//'):
+            continue
+
+        if current_section in sections_to_adopt and DIGEST_PATTERN.match(line):
+            adopted.add(bytes.fromhex(line))
+
+    return adopted, seen_sections
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--output', help='Path of the packed .dat file to write.')
+    parser.add_argument('--input', help='Use an already-downloaded list instead of fetching one.')
+    parser.add_argument('--skip-model-hub-section', action='store_true',
+                        help='Omit the Hugging Face section, which the specification makes optional.')
+    arguments = parser.parse_args()
+
+    output_path = arguments.output
+    if not output_path:
+        webkit_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        output_path = os.path.join(webkit_root, 'Source', 'WebKit', 'Resources',
+                                   'CrossOriginStoragePublicHashList.dat')
+
+    if arguments.input:
+        with open(arguments.input, 'rb') as file:
+            data = file.read()
+    else:
+        # Pin the download against the published checksum rather than checking it afterwards as an
+        # afterthought: a bad transfer must fail this script, not reach the output file.
+        print(f'Fetching {PHL_CHECKSUM_URL}', file=sys.stderr)
+        expected_digest = fetch(PHL_CHECKSUM_URL).decode('utf-8').split()[0].strip().lower()
+        if not DIGEST_PATTERN.match(expected_digest):
+            sys.exit(f'Published checksum is not a SHA-256 digest: {expected_digest!r}')
+
+        print(f'Fetching {PHL_DATA_URL}', file=sys.stderr)
+        data = fetch(PHL_DATA_URL)
+
+        actual_digest = hashlib.sha256(data).hexdigest()
+        if actual_digest != expected_digest:
+            sys.exit(f'Checksum mismatch: expected {expected_digest}, got {actual_digest}. '
+                     'Refusing to write a list that does not match its published checksum.')
+        print(f'Checksum verified: {actual_digest}', file=sys.stderr)
+
+    sections_to_adopt = set(REQUIRED_SECTIONS)
+    if not arguments.skip_model_hub_section:
+        sections_to_adopt |= set(OPTIONAL_SECTIONS)
+
+    digests, seen_sections = parse_sections(data.decode('utf-8'), sections_to_adopt)
+
+    missing_required = [name for name in REQUIRED_SECTIONS if name not in seen_sections]
+    if missing_required:
+        sys.exit(f'Upstream list is missing required section(s): {", ".join(missing_required)}. '
+                 'The section markers may have changed; refusing to ship a partial list.')
+
+    if not digests:
+        sys.exit('Parsed zero digests. Refusing to overwrite the shipped list with an empty one.')
+
+    # Sorted and packed with no delimiters, so a lookup is an O(log n) binary search over a
+    # read-only array rather than a hash set of hundreds of thousands of entries, and so nothing
+    # has to re-sort it on every process startup.
+    packed = b''.join(sorted(digests))
+    assert len(packed) == len(digests) * DIGEST_SIZE
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    temporary_path = output_path + '.tmp'
+    with open(temporary_path, 'wb') as file:
+        file.write(packed)
+    os.replace(temporary_path, output_path)
+
+    print(f'Adopted sections: {", ".join(sorted(sections_to_adopt & seen_sections))}', file=sys.stderr)
+    print(f'Wrote {len(digests)} digests ({len(packed)} bytes) to {output_path}', file=sys.stderr)
+
+
+if __name__ == '__main__':
+    main()

@@ -44,17 +44,20 @@ private:
     void didGetPersisted(uint64_t callbackIdentifier, bool result);
     void didGetEstimate(uint64_t callbackIdentifier, ExceptionOr<StorageEstimate>&&);
     void didGetDirectory(uint64_t callbackIdentifier, ExceptionOr<StorageConnection::DirectoryInfo>&&);
+    void didRequestCrossOriginStorageFileHandle(uint64_t callbackIdentifier, ExceptionOr<StorageConnection::RequestFileHandleInfo>&&);
 
     // StorageConnection
     void getPersisted(ClientOrigin&&, StorageConnection::PersistCallback&&) final;
     void getEstimate(ClientOrigin&&, StorageConnection::GetEstimateCallback&&) final;
     void fileSystemGetDirectory(ClientOrigin&&, StorageConnection::GetDirectoryCallback&&) final;
+    void crossOriginStorageRequestFileHandle(ClientOrigin&&, CrossOriginStorageRequestData&&, StorageConnection::RequestFileHandleCallback&&) final;
 
     WeakPtr<WorkerGlobalScope, WeakPtrImplWithEventTargetData> m_scope;
     uint64_t m_lastCallbackIdentifier { 0 };
     HashMap<uint64_t, StorageConnection::PersistCallback> m_getPersistedCallbacks;
     HashMap<uint64_t, StorageConnection::GetEstimateCallback> m_getEstimateCallbacks;
     HashMap<uint64_t, StorageConnection::GetDirectoryCallback> m_getDirectoryCallbacks;
+    HashMap<uint64_t, StorageConnection::RequestFileHandleCallback> m_requestFileHandleCallbacks;
 };
 
 } // namespace WebCore

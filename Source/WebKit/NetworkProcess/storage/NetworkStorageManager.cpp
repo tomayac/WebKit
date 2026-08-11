@@ -32,6 +32,7 @@
 #include "CacheStorageDiskStore.h"
 #include "CacheStorageManager.h"
 #include "CacheStorageRegistry.h"
+#include "CrossOriginStorageRegistry.h"
 #include "FileSystemStorageHandleRegistry.h"
 #include "FileSystemStorageManager.h"
 #include "IDBStorageConnectionToClient.h"
@@ -286,6 +287,7 @@ void NetworkStorageManager::close(CompletionHandler<void()>&& completionHandler)
         assertIsCurrent(workQueue());
 
         m_originStorageManagers.clear();
+        m_crossOriginStorageRegistry = nullptr;
         m_fileSystemStorageHandleRegistry = nullptr;
         for (auto&& completionHandler : std::exchange(m_persistCompletionHandlers, { }))
             completionHandler.second(false);
@@ -330,6 +332,8 @@ void NetworkStorageManager::stopReceivingMessageFromConnection(IPC::Connection& 
     workQueue().dispatch([this, protectedThis = Ref { *this }, connection = connection.uniqueID()]() mutable {
         assertIsCurrent(workQueue());
         m_idbStorageRegistry->removeConnectionToClient(connection);
+        if (m_crossOriginStorageRegistry)
+            m_crossOriginStorageRegistry->connectionClosed(connection);
         m_originStorageManagers.removeIf([&](auto& entry) {
             auto& manager = entry.value;
             manager->connectionClosed(connection);
@@ -1075,9 +1079,44 @@ void NetworkStorageManager::fileSystemGetDirectory(IPC::Connection& connection, 
     completionHandler(result.value());
 }
 
+CrossOriginStorageRegistry& NetworkStorageManager::crossOriginStorageRegistry()
+{
+    assertIsCurrent(workQueue());
+
+    if (!m_crossOriginStorageRegistry) {
+        // Deliberately not under an origin's storage directory: Cross-Origin Storage entries are
+        // keyed by content hash and shared between origins, so they have no owning origin whose
+        // directory they could live in. Still per-session, so that a private browsing session
+        // never shares entries with a persistent one.
+        m_crossOriginStorageRegistry = CrossOriginStorageRegistry::create(FileSystem::pathByAppendingComponent(m_path, "CrossOriginStorage"_s), *protect(m_fileSystemStorageHandleRegistry), m_volumeCapacityOverride);
+    }
+
+    return *m_crossOriginStorageRegistry;
+}
+
+// https://wicg.github.io/cross-origin-storage/#requestfilehandle
+void NetworkStorageManager::crossOriginStorageRequestFileHandle(IPC::Connection& connection, WebCore::ClientOrigin&& origin, WebCore::CrossOriginStorageRequestData&& request, CompletionHandler<void(Expected<std::pair<WebCore::FileSystemHandleGlobalIdentifier, WebCore::FileSystemHandleIdentifier>, FileSystemStorageError>)>&& completionHandler)
+{
+    ASSERT(!RunLoop::isMain());
+    MESSAGE_CHECK_COMPLETION(isSiteAllowedForConnection(connection.uniqueID(), WebCore::RegistrableDomain { origin.topOrigin }), connection, completionHandler(makeUnexpected(FileSystemStorageError::Unknown)));
+
+    // Re-validated on this side of the process boundary rather than trusted from the content
+    // process: a compromised or simply buggy renderer can speak this IPC protocol directly,
+    // bypassing the WebIDL-layer checks entirely, and the hash value is used to build a path.
+    MESSAGE_CHECK_COMPLETION(isValidCrossOriginStorageHash(request.algorithm, request.value), connection, completionHandler(makeUnexpected(FileSystemStorageError::Unknown)));
+
+    if (!m_fileSystemStorageHandleRegistry)
+        return completionHandler(makeUnexpected(FileSystemStorageError::Unknown));
+
+    completionHandler(crossOriginStorageRegistry().requestFileHandle(connection.uniqueID(), origin, request));
+}
+
 void NetworkStorageManager::closeHandle(WebCore::FileSystemHandleIdentifier identifier)
 {
     ASSERT(!RunLoop::isMain());
+
+    if (m_crossOriginStorageRegistry)
+        m_crossOriginStorageRegistry->handleClosed(identifier);
 
     if (RefPtr handle = m_fileSystemStorageHandleRegistry->getHandle(identifier))
         handle->close();
@@ -1165,6 +1204,11 @@ void NetworkStorageManager::getFile(IPC::Connection& connection, WebCore::FileSy
     if (!handle)
         return completionHandler(makeUnexpected(FileSystemStorageError::Unknown));
 
+    if (m_crossOriginStorageRegistry && m_crossOriginStorageRegistry->ownsHandle(identifier)) {
+        if (auto error = m_crossOriginStorageRegistry->prepareGetFile(identifier))
+            return completionHandler(makeUnexpected(*error));
+    }
+
     if (!FileSystem::fileExists(handle->path()))
         return completionHandler(makeUnexpected(FileSystemStorageError::FileNotFound));
 
@@ -1230,6 +1274,12 @@ void NetworkStorageManager::closeWritable(WebCore::FileSystemHandleIdentifier id
     if (!handle)
         return completionHandler(FileSystemStorageError::Unknown);
 
+    // A Cross-Origin Storage entry's bytes must hash to the entry's own hash before they are
+    // allowed to become that entry's contents, so verification replaces the ordinary close here
+    // rather than running alongside it.
+    if (m_crossOriginStorageRegistry && m_crossOriginStorageRegistry->ownsHandle(identifier))
+        return completionHandler(m_crossOriginStorageRegistry->closeWritable(identifier, streamIdentifier, reason));
+
     completionHandler(handle->closeWritable(streamIdentifier, reason));
 }
 
@@ -1240,6 +1290,14 @@ void NetworkStorageManager::executeCommandForWritable(WebCore::FileSystemHandleI
     RefPtr handle = m_fileSystemStorageHandleRegistry->getHandle(identifier);
     if (!handle)
         return completionHandler(FileSystemStorageError::Unknown);
+
+    // Checked before the resize or write is attempted, not after: nothing crosses the wire for a
+    // truncate(hugeNumber), so without this a single script call could claim an arbitrary amount
+    // of disk long before the authoritative budget check at close() ever runs.
+    if (m_crossOriginStorageRegistry && m_crossOriginStorageRegistry->ownsHandle(identifier)) {
+        if (auto error = m_crossOriginStorageRegistry->checkWriteCommand(identifier, streamIdentifier, type, position, size, dataBytes.size()))
+            return completionHandler(*error);
+    }
 
     handle->executeCommandForWritable(streamIdentifier, type, position, size, dataBytes, hasDataError, WTF::move(completionHandler));
 }
@@ -1445,6 +1503,18 @@ void NetworkStorageManager::deleteData(OptionSet<WebsiteDataType> types, const V
         deleteDataOnDisk(types, -WallTime::infinity(), [&originSet](auto origin) {
             return originSet.contains(origin.topOrigin) || originSet.contains(origin.clientOrigin);
         });
+
+        if (types.contains(WebsiteDataType::FileSystem) && m_crossOriginStorageRegistry) {
+            // Revoke and collect, rather than delete-if-involved. Cross-Origin Storage entries are
+            // content-addressed, so two unrelated sites can legitimately have stored the identical
+            // bytes: removing this origin's storing relationship, and only deleting the entry once
+            // no origin has one left, avoids deleting data an uncleared site still depends on as a
+            // side effect of an action it was never part of.
+            HashSet<String> serializedOrigins;
+            for (auto& origin : originSet)
+                serializedOrigins.add(origin.toString());
+            m_crossOriginStorageRegistry->deleteDataForOrigins(serializedOrigins);
+        }
         RunLoop::mainSingleton().dispatch([protectedThis = WTF::move(protectedThis), completionHandler = WTF::move(completionHandler)]() mutable {
             completionHandler();
         });
@@ -1457,9 +1527,13 @@ void NetworkStorageManager::deleteData(OptionSet<WebsiteDataType> types, const W
     ASSERT(!m_closed);
 
     workQueue().dispatch([this, protectedThis = Ref { *this }, types, originToDelete = origin.isolatedCopy(), completionHandler = WTF::move(completionHandler)]() mutable {
+        auto serializedOriginToDelete = originToDelete.clientOrigin.toString();
         deleteDataOnDisk(types, -WallTime::infinity(), [originToDelete = WTF::move(originToDelete)](auto& origin) {
             return origin == originToDelete;
         });
+
+        if (types.contains(WebsiteDataType::FileSystem) && m_crossOriginStorageRegistry)
+            m_crossOriginStorageRegistry->deleteDataForOrigins({ serializedOriginToDelete });
         RunLoop::mainSingleton().dispatch([protectedThis = WTF::move(protectedThis), completionHandler = WTF::move(completionHandler)]() mutable {
             completionHandler();
         });
@@ -1475,6 +1549,12 @@ void NetworkStorageManager::deleteDataModifiedSince(OptionSet<WebsiteDataType> t
         deleteDataOnDisk(types, modifiedSinceTime, [](auto&) {
             return true;
         });
+
+        // A full wipe is the unambiguous half of clear-data for this registry: unlike a
+        // site-scoped clear, there is no question of what to do with an entry several origins
+        // legitimately share, so it is a plain total reset.
+        if (types.contains(WebsiteDataType::FileSystem) && m_crossOriginStorageRegistry)
+            m_crossOriginStorageRegistry->deleteAllData();
 
         RunLoop::mainSingleton().dispatch([protectedThis = WTF::move(protectedThis), completionHandler = WTF::move(completionHandler)]() mutable {
             completionHandler();
@@ -1492,6 +1572,13 @@ void NetworkStorageManager::deleteDataForRegistrableDomains(OptionSet<WebsiteDat
             auto domain = WebCore::RegistrableDomain::uncheckedCreateFromHost(origin.clientOrigin.host());
             return domains.contains(domain);
         });
+
+        if (types.contains(WebsiteDataType::FileSystem) && m_crossOriginStorageRegistry) {
+            HashSet<WebCore::RegistrableDomain> domainSet;
+            for (auto& domain : domains)
+                domainSet.add(domain);
+            m_crossOriginStorageRegistry->deleteDataForRegistrableDomains(domainSet);
+        }
 
         HashSet<WebCore::RegistrableDomain> deletedDomains;
         for (auto origin : deletedOrigins) {

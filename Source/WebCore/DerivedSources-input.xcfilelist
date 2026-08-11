@@ -443,6 +443,8 @@ $(PROJECT_DIR)/Modules/credentialmanagement/CredentialCreationOptions.idl
 $(PROJECT_DIR)/Modules/credentialmanagement/CredentialMediationRequirement.idl
 $(PROJECT_DIR)/Modules/credentialmanagement/CredentialRequestOptions.idl
 $(PROJECT_DIR)/Modules/credentialmanagement/CredentialsContainer.idl
+$(PROJECT_DIR)/Modules/cross-origin-storage/CrossOriginStorageManager.idl
+$(PROJECT_DIR)/Modules/cross-origin-storage/NavigatorCrossOriginStorage.idl
 $(PROJECT_DIR)/Modules/credentialmanagement/FederatedCredentialRequestOptions.idl
 $(PROJECT_DIR)/Modules/credentialmanagement/IdentityCredentialRequestOptions.idl
 $(PROJECT_DIR)/Modules/credentialmanagement/Navigator+Credentials.idl

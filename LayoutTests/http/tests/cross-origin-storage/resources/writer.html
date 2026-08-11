@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<!--
+Stores a resource into Cross-Origin Storage from whatever origin this page is loaded on, at the
+disclosure scope its query string asks for, then reports the outcome to its opener.
+
+Loaded cross-origin on purpose: proving the disclosure rules requires a real second origin, not a
+second script context on the same page.
+-->
+<script>
+async function run() {
+    const parameters = new URLSearchParams(location.search);
+    const content = parameters.get('content');
+    const scope = parameters.get('scope');
+
+    const bytes = new TextEncoder().encode(content);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const value = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const options = { create: true };
+    if (scope === 'wildcard')
+        options.origins = '*';
+    else if (scope === 'list')
+        options.origins = parameters.getAll('origin');
+
+    try {
+        const handle = await navigator.crossOriginStorage.requestFileHandle({ algorithm: 'SHA-256', value }, options);
+        const writable = await handle.createWritable();
+        await writable.write(new Blob([content]));
+        await writable.close();
+        parent.postMessage({ result: 'stored', value }, '*');
+    } catch (error) {
+        parent.postMessage({ result: 'error', name: error.name, message: error.message }, '*');
+    }
+}
+run();
+</script>

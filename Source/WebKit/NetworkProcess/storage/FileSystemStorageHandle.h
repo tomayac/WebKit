@@ -85,6 +85,10 @@ public:
     std::optional<FileSystemStorageError> closeWritable(WebCore::FileSystemWritableFileStreamIdentifier, WebCore::FileSystemWriteCloseReason);
     void executeCommandForWritable(WebCore::FileSystemWritableFileStreamIdentifier, WebCore::FileSystemWriteCommandType, std::optional<uint64_t> position, std::optional<uint64_t> size, std::span<const uint8_t> dataBytes, bool hasDataError, CompletionHandler<void(std::optional<FileSystemStorageError>)>&&);
     Vector<WebCore::FileSystemWritableFileStreamIdentifier> writables() const;
+    // Path of the temporary file an in-progress writable stream is accumulating into. Cross-Origin
+    // Storage needs it to hash the complete written bytes *before* closeWritable() publishes them,
+    // since a hash can only ever be verified against the final byte sequence.
+    String activeWritablePath(WebCore::FileSystemWritableFileStreamIdentifier) const;
 
 private:
     FileSystemStorageHandle(FileSystemStorageManager&, Type, String&& path, String&& name);

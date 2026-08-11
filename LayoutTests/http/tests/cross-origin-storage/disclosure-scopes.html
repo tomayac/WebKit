@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<!-- webkit-test-runner [ CrossOriginStorageEnabled=true ] -->
+<html>
+<head>
+<title>Cross-Origin Storage disclosure scopes across genuinely different origins</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+</head>
+<body>
+<!--
+The spec-conformance suite for this feature lives in web-platform-tests and is not duplicated
+here. What it structurally cannot cover, and what this test exists for, is disclosure between two
+*actually different* origins: it is easy to build a suite that never once exercises cross-origin
+disclosure because every test happens to write and read from the same origin for convenience.
+
+127.0.0.1 and localhost are different origins and, because neither has a registrable domain, also
+different sites. Two ports on 127.0.0.1 are different origins but the same site. Loopback is
+treated as a secure context, so no TLS certificate is needed for a [SecureContext] API.
+-->
+<script>
+'use strict';
+
+const SAME_SITE_ORIGIN = 'http://127.0.0.1:8443';
+const CROSS_SITE_ORIGIN = 'http://localhost:8000';
+
+function uniqueContent(label) {
+    return `cos-webkit-${label}-${Date.now()}-${Math.random()}`;
+}
+
+// Runs a helper page in a cross-origin iframe and resolves with the message it posts back. The
+// iframe carries allow="cross-origin-storage" because the policy-controlled feature's default
+// allowlist is 'self', so a cross-origin frame is otherwise rejected before any registry lookup.
+function runInFrame(origin, page, parameters) {
+    return new Promise((resolve, reject) => {
+        const frame = document.createElement('iframe');
+        frame.allow = 'cross-origin-storage';
+        frame.src = `${origin}/cross-origin-storage/resources/${page}?${parameters}`;
+        const onMessage = event => {
+            if (event.source !== frame.contentWindow)
+                return;
+            window.removeEventListener('message', onMessage);
+            frame.remove();
+            resolve(event.data);
+        };
+        window.addEventListener('message', onMessage);
+        frame.onerror = () => reject(new Error(`Failed to load ${frame.src}`));
+        document.body.appendChild(frame);
+    });
+}
+
+async function storeLocally(content, options = {}) {
+    const bytes = new TextEncoder().encode(content);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const value = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const handle = await navigator.crossOriginStorage.requestFileHandle(
+        { algorithm: 'SHA-256', value }, { ...options, create: true });
+    const writable = await handle.createWritable();
+    await writable.write(new Blob([content]));
+    await writable.close();
+    return value;
+}
+
+promise_test(async t => {
+    const content = uniqueContent('same-site-default');
+    const value = await storeLocally(content);
+
+    // Default scope is same-site, not same-origin: a different port on the same host is a
+    // different origin but the same site, so it is disclosed.
+    const result = await runInFrame(SAME_SITE_ORIGIN, 'reader.html', `value=${value}`);
+    assert_equals(result.result, 'read', `expected a successful read, got ${result.name}: ${result.message}`);
+    assert_equals(result.text, content);
+}, 'A default-scoped entry is disclosed to a same-site, different-origin reader');
+
+promise_test(async t => {
+    const content = uniqueContent('cross-site-default');
+    const value = await storeLocally(content);
+
+    // A genuinely different site gets a plain miss, indistinguishable from the entry not existing.
+    const result = await runInFrame(CROSS_SITE_ORIGIN, 'reader.html', `value=${value}`);
+    assert_equals(result.result, 'error');
+    assert_equals(result.name, 'NotFoundError');
+}, 'A default-scoped entry is not disclosed to a cross-site reader');
+
+promise_test(async t => {
+    const content = uniqueContent('listed-origin');
+    const value = await storeLocally(content, { origins: [CROSS_SITE_ORIGIN] });
+
+    const listed = await runInFrame(CROSS_SITE_ORIGIN, 'reader.html', `value=${value}`);
+    assert_equals(listed.result, 'read', `expected a successful read, got ${listed.name}: ${listed.message}`);
+    assert_equals(listed.text, content);
+}, 'A list-scoped entry is disclosed to an origin on its list');
+
+promise_test(async t => {
+    const content = uniqueContent('unlisted-origin');
+    // Scoped to an origin that is not the one that will try to read it.
+    const value = await storeLocally(content, { origins: ['https://not-the-reader.example'] });
+
+    const unlisted = await runInFrame(CROSS_SITE_ORIGIN, 'reader.html', `value=${value}`);
+    assert_equals(unlisted.result, 'error');
+    assert_equals(unlisted.name, 'NotFoundError');
+}, 'A list-scoped entry is not disclosed to an origin absent from its list');
+
+promise_test(async t => {
+    // Wildcard scope is not unconditional disclosure. This content was invented by this test, so
+    // it cannot possibly be on the Public Hash List, and must fail closed for a reader outside the
+    // entry's storing origins -- as an ordinary miss, not a distinguishable "blocked" signal.
+    const content = uniqueContent('wildcard-not-on-phl');
+    const value = await storeLocally(content, { origins: '*' });
+
+    const result = await runInFrame(CROSS_SITE_ORIGIN, 'reader.html', `value=${value}`);
+    assert_equals(result.result, 'error');
+    assert_equals(result.name, 'NotFoundError');
+}, 'A wildcard-scoped entry whose hash is not on the Public Hash List is not disclosed cross-origin');
+
+promise_test(async t => {
+    // ...but its own storing origin can always read it back, whatever the scope says and whether
+    // or not the hash is on the list.
+    const content = uniqueContent('wildcard-storer-readback');
+    const value = await storeLocally(content, { origins: '*' });
+
+    const handle = await navigator.crossOriginStorage.requestFileHandle({ algorithm: 'SHA-256', value });
+    const file = await handle.getFile();
+    assert_equals(await file.text(), content);
+}, 'A storing origin can always read back its own wildcard-scoped write');
+
+promise_test(async t => {
+    const content = uniqueContent('cross-site-storer');
+    const stored = await runInFrame(CROSS_SITE_ORIGIN, 'writer.html', `content=${encodeURIComponent(content)}&scope=default`);
+    assert_equals(stored.result, 'stored', `expected the cross-site write to succeed, got ${stored.name}: ${stored.message}`);
+
+    // The other site stored it with default (same-site) scope, so this origin -- a different site
+    // -- must not see it, even though the entry genuinely exists and is written.
+    await promise_rejects_dom(t, 'NotFoundError',
+        navigator.crossOriginStorage.requestFileHandle({ algorithm: 'SHA-256', value: stored.value }));
+}, 'An entry written same-site-scoped by another site is not disclosed to this one');
+</script>
+</body>
+</html>

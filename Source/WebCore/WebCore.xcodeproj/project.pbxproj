@@ -7513,6 +7513,9 @@
 		FF945ECC161F7F3600971BC8 /* PseudoElement.h in Headers */ = {isa = PBXBuildFile; fileRef = FF945ECA161F7F3600971BC8 /* PseudoElement.h */; settings = {ATTRIBUTES = (Private, ); }; };
 		FFAC30FE184FB145008C4F1E /* TrailingObjects.h in Headers */ = {isa = PBXBuildFile; fileRef = FFAC30FC184FB145008C4F1E /* TrailingObjects.h */; settings = {ATTRIBUTES = (Private, ); }; };
 		FFDBC047183D27B700407109 /* LineWidth.h in Headers */ = {isa = PBXBuildFile; fileRef = FFDBC045183D27B700407109 /* LineWidth.h */; settings = {ATTRIBUTES = (Private, ); }; };
+		024A5C47F00EC34D9368628A /* CrossOriginStorageLimits.h in Headers */ = {isa = PBXBuildFile; fileRef = C57D8AEB56A279CEB8A2C7EE /* CrossOriginStorageLimits.h */; settings = {ATTRIBUTES = (Private, ); }; };
+		FC138B032B3BD88CAF1A4FC7 /* CrossOriginStorageManager.h in Headers */ = {isa = PBXBuildFile; fileRef = 46F8471BDC78B4E519D57C41 /* CrossOriginStorageManager.h */; settings = {ATTRIBUTES = (Private, ); }; };
+		57F675CF1DF0635157BF81C0 /* CrossOriginStorageRequestData.h in Headers */ = {isa = PBXBuildFile; fileRef = BBE1B9FAF6AAE39B99E944BE /* CrossOriginStorageRequestData.h */; settings = {ATTRIBUTES = (Private, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildRule section */
@@ -24003,6 +24006,12 @@
 		FFEFAB2D183BCC6F00514565 /* MapperCallback.h */ = {isa = PBXFileReference; lastKnownFileType = text; path = MapperCallback.h; sourceTree = "<group>"; };
 		FFEFAB2D183BCC6F00514566 /* InternalObserverMap.h */ = {isa = PBXFileReference; lastKnownFileType = text; path = InternalObserverMap.h; sourceTree = "<group>"; };
 		FFEFAB2D183BCC6F00514567 /* InternalObserverMap.cpp */ = {isa = PBXFileReference; lastKnownFileType = text; path = InternalObserverMap.cpp; sourceTree = "<group>"; };
+		C57D8AEB56A279CEB8A2C7EE /* CrossOriginStorageLimits.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CrossOriginStorageLimits.h; sourceTree = "<group>"; };
+		A6ECAF6DC03EB73EBA432F4F /* CrossOriginStorageManager.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = CrossOriginStorageManager.cpp; sourceTree = "<group>"; };
+		46F8471BDC78B4E519D57C41 /* CrossOriginStorageManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CrossOriginStorageManager.h; sourceTree = "<group>"; };
+		D76CF59620FC448241C47728 /* CrossOriginStorageManager.idl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = CrossOriginStorageManager.idl; sourceTree = "<group>"; };
+		BBE1B9FAF6AAE39B99E944BE /* CrossOriginStorageRequestData.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CrossOriginStorageRequestData.h; sourceTree = "<group>"; };
+		42838A7F6075F67466FAD5A0 /* NavigatorCrossOriginStorage.idl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = NavigatorCrossOriginStorage.idl; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -33802,6 +33811,19 @@
 			path = "applepay-ams-ui";
 			sourceTree = "<group>";
 		};
+		3C28CDE422F071997BE4279D /* cross-origin-storage */ = {
+			isa = PBXGroup;
+			children = (
+				C57D8AEB56A279CEB8A2C7EE /* CrossOriginStorageLimits.h */,
+				A6ECAF6DC03EB73EBA432F4F /* CrossOriginStorageManager.cpp */,
+				46F8471BDC78B4E519D57C41 /* CrossOriginStorageManager.h */,
+				D76CF59620FC448241C47728 /* CrossOriginStorageManager.idl */,
+				BBE1B9FAF6AAE39B99E944BE /* CrossOriginStorageRequestData.h */,
+				42838A7F6075F67466FAD5A0 /* NavigatorCrossOriginStorage.idl */,
+			);
+			path = "cross-origin-storage";
+			sourceTree = "<group>";
+		};
 		971145FE14EF006E00674FD9 /* Modules */ = {
 			isa = PBXGroup;
 			children = (
@@ -33818,6 +33840,7 @@
 				E596DD23251902D600C275A7 /* contact-picker */,
 				7B3ED2F42A4CD56E0042B08A /* cookie-store */,
 				57C7A6881E56946D00C67D71 /* credentialmanagement */,
+				3C28CDE422F071997BE4279D /* cross-origin-storage */,
 				CDA98DBD16014E0800FEA3B1 /* encryptedmedia */,
 				83FB33651F508A1700986E54 /* entriesapi */,
 				41F54F7C1C50C4F600338488 /* fetch */,
@@ -48787,6 +48810,9 @@
 				51BE37E00DAEE00E001085FC /* StorageArea.h in Headers */,
 				BC4A533725605AE10028C592 /* StorageBlockingPolicy.h in Headers */,
 				93085DBD26E18ED9000EC6A7 /* StorageConnection.h in Headers */,
+				024A5C47F00EC34D9368628A /* CrossOriginStorageLimits.h in Headers */,
+				FC138B032B3BD88CAF1A4FC7 /* CrossOriginStorageManager.h in Headers */,
+				57F675CF1DF0635157BF81C0 /* CrossOriginStorageRequestData.h in Headers */,
 				9317019D2967DB5500D28A72 /* StorageEstimate.h in Headers */,
 				51E0BABB0DA5547100A9E417 /* StorageEvent.h in Headers */,
 				C5EBDD84105EDDEC0056816F /* StorageEventDispatcher.h in Headers */,

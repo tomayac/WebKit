@@ -32,6 +32,7 @@ set(WebCore_PRIVATE_INCLUDE_DIRECTORIES
     "${WEBCORE_DIR}/Modules/contact-picker"
     "${WEBCORE_DIR}/Modules/cookie-store"
     "${WEBCORE_DIR}/Modules/credentialmanagement"
+    "${WEBCORE_DIR}/Modules/cross-origin-storage"
     "${WEBCORE_DIR}/Modules/encryptedmedia"
     "${WEBCORE_DIR}/Modules/encryptedmedia/legacy"
     "${WEBCORE_DIR}/Modules/entriesapi"
@@ -309,6 +310,7 @@ set(WebCore_IDL_INCLUDES
     Modules/compression
     Modules/cookie-store
     Modules/credentialmanagement
+    Modules/cross-origin-storage
     Modules/encryptedmedia/legacy
     Modules/entriesapi
     Modules/fetch
@@ -408,6 +410,8 @@ set(WebCore_NON_SVG_IDL_FILES
     Modules/encryptedmedia/MediaKeys.idl
     Modules/encryptedmedia/MediaKeysRequirement.idl
 
+    Modules/cross-origin-storage/CrossOriginStorageManager.idl
+    Modules/cross-origin-storage/NavigatorCrossOriginStorage.idl
     Modules/entriesapi/DOMFileSystem.idl
     Modules/entriesapi/ErrorCallback.idl
     Modules/entriesapi/FileCallback.idl

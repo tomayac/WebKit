@@ -35,6 +35,7 @@
 };
 
 WorkerNavigator includes NavigatorBadge;
+WorkerNavigator includes NavigatorCrossOriginStorage;
 WorkerNavigator includes NavigatorID;
 WorkerNavigator includes NavigatorLanguage;
 WorkerNavigator includes NavigatorLocks;

@@ -2815,6 +2815,10 @@
 		FEE43FD31E67B0180077D6D1 /* WebInspectorInterruptDispatcher.h in Headers */ = {isa = PBXBuildFile; fileRef = FEE43FD11E67AFC60077D6D1 /* WebInspectorInterruptDispatcher.h */; };
 		FF0F70902E8242DB00D52BE1 /* WasmDebuggerDebuggable.h in Headers */ = {isa = PBXBuildFile; fileRef = FF0F708D2E8242DB00D52BE1 /* WasmDebuggerDebuggable.h */; };
 		FFCC7DFE2E95876C00D4A715 /* WasmDebuggerDispatcher.h in Headers */ = {isa = PBXBuildFile; fileRef = FFCC7DFB2E95876C00D4A715 /* WasmDebuggerDispatcher.h */; };
+		83B4A2732EA2BA8DFB931C56 /* CrossOriginStoragePublicHashList.h in Headers */ = {isa = PBXBuildFile; fileRef = 7DBE960264F0F7541BAB46B0 /* CrossOriginStoragePublicHashList.h */; };
+		212E965B51284576E14065AA /* CrossOriginStorageRateLimiter.h in Headers */ = {isa = PBXBuildFile; fileRef = 8E7BAD4CF0D97E17F9AD28B4 /* CrossOriginStorageRateLimiter.h */; };
+		43B9BA391ACC0622C4AD3BD3 /* CrossOriginStorageRegistry.h in Headers */ = {isa = PBXBuildFile; fileRef = 8B0C52F68D4B64660722A2B0 /* CrossOriginStorageRegistry.h */; };
+		13005A1857374D1235F5CB3E /* CrossOriginStoragePublicHashList.dat in Resources */ = {isa = PBXBuildFile; fileRef = 36B2268385D06FFC7DACBA24 /* CrossOriginStoragePublicHashList.dat */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildRule section */
@@ -9333,6 +9337,13 @@
 		FF0F708E2E8242DB00D52BE1 /* WasmDebuggerDebuggable.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = WasmDebuggerDebuggable.cpp; sourceTree = "<group>"; };
 		FFCC7DFB2E95876C00D4A715 /* WasmDebuggerDispatcher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WasmDebuggerDispatcher.h; sourceTree = "<group>"; };
 		FFCC7DFC2E95876C00D4A715 /* WasmDebuggerDispatcher.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = WasmDebuggerDispatcher.cpp; sourceTree = "<group>"; };
+		160E84BF8B7956A1A91761E5 /* CrossOriginStoragePublicHashList.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = CrossOriginStoragePublicHashList.cpp; sourceTree = "<group>"; };
+		7DBE960264F0F7541BAB46B0 /* CrossOriginStoragePublicHashList.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CrossOriginStoragePublicHashList.h; sourceTree = "<group>"; };
+		6CDEC7ECFDBF00449CAFABA3 /* CrossOriginStorageRateLimiter.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = CrossOriginStorageRateLimiter.cpp; sourceTree = "<group>"; };
+		8E7BAD4CF0D97E17F9AD28B4 /* CrossOriginStorageRateLimiter.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CrossOriginStorageRateLimiter.h; sourceTree = "<group>"; };
+		4AA30BA142A061D712F0D28C /* CrossOriginStorageRegistry.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = CrossOriginStorageRegistry.cpp; sourceTree = "<group>"; };
+		8B0C52F68D4B64660722A2B0 /* CrossOriginStorageRegistry.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CrossOriginStorageRegistry.h; sourceTree = "<group>"; };
+		36B2268385D06FFC7DACBA24 /* CrossOriginStoragePublicHashList.dat */ = {isa = PBXFileReference; lastKnownFileType = file; name = CrossOriginStoragePublicHashList.dat; path = Resources/CrossOriginStoragePublicHashList.dat; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -9954,6 +9965,7 @@
 				D246E13B2C61292700B41DE2 /* HTTPSBrowsingWarning.xcassets */,
 				8DC2EF5A0486A6940098B216 /* Info.plist */,
 				089C1666FE841158C02AAC07 /* InfoPlist.strings */,
+				36B2268385D06FFC7DACBA24 /* CrossOriginStoragePublicHashList.dat */,
 				5C8BC796218CB58A00813886 /* SafeBrowsing.xcassets */,
 				F4A1B2C30000000000000002 /* TextExtractionFilter.mlmodel */,
 				E1D26A4C1759634E0095BFD1 /* WebContentProcess.xib */,
@@ -15409,6 +15421,12 @@
 				931A075326F06AB4004474CD /* FileSystemStorageHandle.h */,
 				935B579926F5192F008B48AC /* FileSystemStorageHandleRegistry.cpp */,
 				935B579826F51270008B48AC /* FileSystemStorageHandleRegistry.h */,
+				160E84BF8B7956A1A91761E5 /* CrossOriginStoragePublicHashList.cpp */,
+				7DBE960264F0F7541BAB46B0 /* CrossOriginStoragePublicHashList.h */,
+				6CDEC7ECFDBF00449CAFABA3 /* CrossOriginStorageRateLimiter.cpp */,
+				8E7BAD4CF0D97E17F9AD28B4 /* CrossOriginStorageRateLimiter.h */,
+				4AA30BA142A061D712F0D28C /* CrossOriginStorageRegistry.cpp */,
+				8B0C52F68D4B64660722A2B0 /* CrossOriginStorageRegistry.h */,
 				931A075126F06310004474CD /* FileSystemStorageManager.cpp */,
 				931A075026F06310004474CD /* FileSystemStorageManager.h */,
 				4105A0652D537C2B00EA2D19 /* FileSystemStorageManagerLock.h */,
@@ -18400,6 +18418,9 @@
 				9312BAD626F33C2900FDDF5F /* FileSystemStorageHandle.h in Headers */,
 				935B579A26F51933008B48AC /* FileSystemStorageHandleRegistry.h in Headers */,
 				9312BAD526F33C2600FDDF5F /* FileSystemStorageManager.h in Headers */,
+				83B4A2732EA2BA8DFB931C56 /* CrossOriginStoragePublicHashList.h in Headers */,
+				212E965B51284576E14065AA /* CrossOriginStorageRateLimiter.h in Headers */,
+				43B9BA391ACC0622C4AD3BD3 /* CrossOriginStorageRegistry.h in Headers */,
 				93B42F2F29834B2600DF1D45 /* FileSystemSyncAccessHandleInfo.h in Headers */,
 				00B9661A18E25AE100CE1F88 /* FindClient.h in Headers */,
 				1A90C1F41264FD71003E44D4 /* FindController.h in Headers */,
@@ -20531,6 +20552,7 @@
 				D246E13C2C61292700B41DE2 /* HTTPSBrowsingWarning.xcassets in Resources */,
 				8DC2EF530486A6940098B216 /* InfoPlist.strings in Resources */,
 				3FB08E431F60B240005E5312 /* iOS.xcassets in Resources */,
+				13005A1857374D1235F5CB3E /* CrossOriginStoragePublicHashList.dat in Resources */,
 				5C8BC797218CBB4800813886 /* SafeBrowsing.xcassets in Resources */,
 				0DF0187C2FA847F70077DA6B /* studio_lighting_objectmode_v3.reibl in Resources */,
 				0DF0187E2FA847F70077DA6B /* studio_lighting_objectmode_v3_diffmap.ktx in Resources */,

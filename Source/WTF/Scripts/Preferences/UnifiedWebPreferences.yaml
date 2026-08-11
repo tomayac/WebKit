@@ -2381,6 +2381,22 @@ CrossOriginOpenerPolicyEnabled:
     WebCore:
       default: false
 
+CrossOriginStorageEnabled:
+  type: bool
+  status: testable
+  category: dom
+  humanReadableName: "Cross-Origin Storage API"
+  humanReadableDescription: "Enable the Cross-Origin Storage API (navigator.crossOriginStorage)"
+  defaultValue:
+    WebKitLegacy:
+      default: false
+    WebKit:
+      default: false
+    WebCore:
+      default: false
+  disableInLockdownMode: true
+  sharedPreferenceForWebProcess: true
+
 CursiveFontFamily:
   type: String
   status: embedder

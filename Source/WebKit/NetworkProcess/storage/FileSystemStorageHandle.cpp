@@ -438,6 +438,15 @@ Vector<WebCore::FileSystemWritableFileStreamIdentifier> FileSystemStorageHandle:
     return copyToVector(m_activeWritableFiles.keys());
 }
 
+String FileSystemStorageHandle::activeWritablePath(WebCore::FileSystemWritableFileStreamIdentifier streamIdentifier) const
+{
+    auto iterator = m_activeWritableFiles.find(streamIdentifier);
+    if (iterator == m_activeWritableFiles.end())
+        return { };
+
+    return iterator->value.path;
+}
+
 Expected<Vector<String>, FileSystemStorageError> FileSystemStorageHandle::getHandleNames()
 {
     if (m_type != Type::Directory)

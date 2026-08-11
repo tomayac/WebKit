@@ -37,6 +37,7 @@
 namespace WebCore {
 
 class GPU;
+class CrossOriginStorageManager;
 class ScriptExecutionContext;
 class ServiceWorkerContainer;
 class StorageManager;
@@ -71,6 +72,7 @@ public:
     static Vector<String> languages();
 
     StorageManager& storage();
+    CrossOriginStorageManager& crossOriginStorage();
     WebLockManager& locks();
 
     int hardwareConcurrency(ScriptExecutionContext&);
@@ -80,6 +82,7 @@ protected:
 
 private:
     RefPtr<StorageManager> m_storageManager;
+    RefPtr<CrossOriginStorageManager> m_crossOriginStorageManager;
     RefPtr<WebLockManager> m_webLockManager;
 
 public:

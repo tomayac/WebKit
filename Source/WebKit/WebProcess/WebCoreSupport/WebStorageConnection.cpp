@@ -31,6 +31,7 @@
 #include "WebFileSystemStorageConnection.h"
 #include "WebProcess.h"
 #include <WebCore/ClientOrigin.h>
+#include <WebCore/CrossOriginStorageRequestData.h>
 #include <WebCore/ExceptionOr.h>
 #include <WebCore/FileSystemHandleIdentifier.h>
 #include <WebCore/StorageEstimate.h>
@@ -71,6 +72,18 @@ void WebStorageConnection::fileSystemGetDirectory(WebCore::ClientOrigin&& origin
         auto& [globalIdentifier, identifier] = result.value();
         auto connection = RefPtr<WebCore::FileSystemStorageConnection> { &WebProcess::singleton().fileSystemStorageConnection() };
         completionHandler(WebCore::StorageConnection::DirectoryInfo { globalIdentifier, identifier, WTF::move(connection) });
+    });
+}
+
+void WebStorageConnection::crossOriginStorageRequestFileHandle(WebCore::ClientOrigin&& origin, WebCore::CrossOriginStorageRequestData&& request, StorageConnection::RequestFileHandleCallback&& completionHandler)
+{
+    Ref { connection() }->sendWithAsyncReply(Messages::NetworkStorageManager::CrossOriginStorageRequestFileHandle(origin, request), [completionHandler = WTF::move(completionHandler)](auto result) mutable {
+        if (!result)
+            return completionHandler(convertToException(result.error()));
+
+        auto& [globalIdentifier, identifier] = result.value();
+        auto connection = RefPtr<WebCore::FileSystemStorageConnection> { &WebProcess::singleton().fileSystemStorageConnection() };
+        completionHandler(WebCore::StorageConnection::RequestFileHandleInfo { globalIdentifier, identifier, WTF::move(connection) });
     });
 }
 

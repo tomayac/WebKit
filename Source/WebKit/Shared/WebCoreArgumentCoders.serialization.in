@@ -6731,6 +6731,7 @@ struct WebCore::OwnerPermissionsPolicyData {
 
 [Nested] enum class WebCore::PermissionsPolicy::Feature : uint8_t {
     Camera,
+    CrossOriginStorage,
     Microphone,
     SpeakerSelection,
     DisplayCapture,

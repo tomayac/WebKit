@@ -39,6 +39,7 @@
 #include "WebsiteData.h"
 #include "WorkQueueMessageReceiver.h"
 #include <WebCore/ClientOrigin.h>
+#include <WebCore/CrossOriginStorageRequestData.h>
 #include <WebCore/DOMCacheEngine.h>
 #include <WebCore/FileSystemHandleGlobalIdentifier.h>
 #include <WebCore/FileSystemHandleIdentifier.h>
@@ -101,6 +102,7 @@ namespace WebKit {
 enum class BackgroundFetchChange : uint8_t;
 enum class TimeBasedEvictionMode : uint8_t;
 enum class UnifiedOriginStorageLevel : uint8_t;
+class CrossOriginStorageRegistry;
 class FileSystemStorageHandleRegistry;
 class IDBStorageRegistry;
 class NetworkProcess;
@@ -225,6 +227,10 @@ private:
     void removeGlobalIdentifierReferences(IPC::Connection&, WebCore::ClientOrigin&&, Vector<WebCore::FileSystemHandleGlobalIdentifier>&&);
     void resolveGlobalIdentifier(IPC::Connection&, WebCore::ClientOrigin&&, WebCore::FileSystemHandleGlobalIdentifier, CompletionHandler<void(Expected<WebCore::FileSystemHandleIdentifier, FileSystemStorageError>)>&&);
 
+    // Message handler for Cross-Origin Storage.
+    void crossOriginStorageRequestFileHandle(IPC::Connection&, WebCore::ClientOrigin&&, WebCore::CrossOriginStorageRequestData&&, CompletionHandler<void(Expected<std::pair<WebCore::FileSystemHandleGlobalIdentifier, WebCore::FileSystemHandleIdentifier>, FileSystemStorageError>)>&&);
+    CrossOriginStorageRegistry& crossOriginStorageRegistry();
+
     // Message handlers for WebStorage.
     void connectToStorageArea(IPC::Connection&, WebCore::StorageType, StorageAreaMapIdentifier, std::optional<StorageNamespaceIdentifier>, const WebCore::ClientOrigin&, CompletionHandler<void(std::optional<StorageAreaIdentifier>, HashMap<String, String>, uint64_t)>&&);
     void connectToStorageAreaSync(IPC::Connection&, WebCore::StorageType, StorageAreaMapIdentifier, std::optional<StorageNamespaceIdentifier>, const WebCore::ClientOrigin&, CompletionHandler<void(std::optional<StorageAreaIdentifier>, HashMap<String, String>, uint64_t)>&&);
@@ -327,6 +333,7 @@ private:
     HashMap<WebCore::ClientOrigin, std::unique_ptr<OriginStorageManager>> m_originStorageManagers WTF_GUARDED_BY_CAPABILITY(workQueue());
     ThreadSafeWeakHashSet<IPC::Connection> m_connections;
     RefPtr<FileSystemStorageHandleRegistry> m_fileSystemStorageHandleRegistry;
+    RefPtr<CrossOriginStorageRegistry> m_crossOriginStorageRegistry;
     const std::unique_ptr<StorageAreaRegistry> m_storageAreaRegistry;
     const std::unique_ptr<IDBStorageRegistry> m_idbStorageRegistry;
     const RefPtr<CacheStorageRegistry> m_cacheStorageRegistry;

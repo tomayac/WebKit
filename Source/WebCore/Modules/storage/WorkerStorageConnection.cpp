@@ -27,6 +27,7 @@
 #include "WorkerStorageConnection.h"
 
 #include "ClientOrigin.h"
+#include "CrossOriginStorageRequestData.h"
 #include "Document.h"
 #include "ExceptionOr.h"
 #include "StorageEstimate.h"
@@ -56,6 +57,10 @@ void WorkerStorageConnection::scopeClosed()
 
     auto getDirectoryCallbacks = std::exchange(m_getDirectoryCallbacks, { });
     for (auto& callback : getDirectoryCallbacks.values())
+        callback(Exception { ExceptionCode::InvalidStateError });
+
+    auto requestFileHandleCallbacks = std::exchange(m_requestFileHandleCallbacks, { });
+    for (auto& callback : requestFileHandleCallbacks.values())
         callback(Exception { ExceptionCode::InvalidStateError });
 
     auto getEstimateCallbacks = std::exchange(m_getEstimateCallbacks, { });
@@ -186,6 +191,61 @@ void WorkerStorageConnection::didGetDirectory(uint64_t callbackIdentifier, Excep
 
     Ref workerFileSystemStorageConnection = scope->getFileSystemStorageConnection(protect(*mainThreadFileSystemStorageConnection));
     callback(StorageConnection::DirectoryInfo { result.returnValue().globalIdentifier, result.returnValue().identifier, WTF::move(workerFileSystemStorageConnection) });
+}
+
+// A worker reaches the registry the same way it reaches the bucket file system: by hopping to
+// the loader thread, which owns the real connection, and hopping the result back.
+void WorkerStorageConnection::crossOriginStorageRequestFileHandle(ClientOrigin&& origin, CrossOriginStorageRequestData&& request, StorageConnection::RequestFileHandleCallback&& completionHandler)
+{
+    RefPtr scope = m_scope.get();
+    ASSERT(scope);
+
+    CheckedPtr workerLoaderProxy = scope->thread()->workerLoaderProxy();
+    if (!workerLoaderProxy)
+        return completionHandler(Exception { ExceptionCode::InvalidStateError });
+
+    auto callbackIdentifier = ++m_lastCallbackIdentifier;
+    m_requestFileHandleCallbacks.add(callbackIdentifier, WTF::move(completionHandler));
+
+    workerLoaderProxy->postTaskToLoader([callbackIdentifier, contextIdentifier = scope->identifier(), origin = WTF::move(origin).isolatedCopy(), request = WTF::move(request).isolatedCopy()](auto& context) mutable {
+        ASSERT(isMainThread());
+
+        auto& document = downcast<Document>(context);
+        auto mainThreadConnection = document.storageConnection();
+        auto mainThreadCallback = [callbackIdentifier, contextIdentifier](auto&& result) mutable {
+            ScriptExecutionContext::postTaskTo(contextIdentifier, [callbackIdentifier, result = crossThreadCopy(WTF::move(result))] (auto& scope) mutable {
+                downcast<WorkerGlobalScope>(scope).storageConnection().didRequestCrossOriginStorageFileHandle(callbackIdentifier, WTF::move(result));
+            });
+        };
+        if (!mainThreadConnection)
+            return mainThreadCallback(Exception { ExceptionCode::InvalidStateError });
+
+        mainThreadConnection->crossOriginStorageRequestFileHandle(WTF::move(origin), WTF::move(request), WTF::move(mainThreadCallback));
+    });
+}
+
+void WorkerStorageConnection::didRequestCrossOriginStorageFileHandle(uint64_t callbackIdentifier, ExceptionOr<StorageConnection::RequestFileHandleInfo>&& result)
+{
+    RefPtr<FileSystemStorageConnection> mainThreadFileSystemStorageConnection = result.hasException() ? nullptr : result.returnValue().connection;
+    auto releaseConnectionScope = makeScopeExit([connection = mainThreadFileSystemStorageConnection]() mutable {
+        if (connection)
+            callOnMainThread([connection = WTF::move(connection)]() { });
+    });
+
+    auto callback = m_requestFileHandleCallbacks.take(callbackIdentifier);
+    if (!callback)
+        return;
+
+    if (result.hasException())
+        return callback(WTF::move(result));
+
+    RefPtr scope = m_scope.get();
+    if (!scope)
+        return callback(Exception { ExceptionCode::InvalidStateError });
+    releaseConnectionScope.release();
+
+    Ref workerFileSystemStorageConnection = scope->getFileSystemStorageConnection(protect(*mainThreadFileSystemStorageConnection));
+    callback(StorageConnection::RequestFileHandleInfo { result.returnValue().globalIdentifier, result.returnValue().identifier, WTF::move(workerFileSystemStorageConnection) });
 }
 
 } // namespace WebCore

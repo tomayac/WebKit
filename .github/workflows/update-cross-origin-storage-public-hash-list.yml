@@ -1,0 +1,49 @@
+# Refreshes WebKit's snapshot of the Cross-Origin Storage Public Hash List.
+#
+# The PHL is an explicitly rolling-release list, so a snapshot taken once by hand slowly drifts
+# stale relative to the cadence its governance model assumes, with nothing to notice or correct
+# that. "We integrated the PHL" and "we keep the PHL current" are two separate milestones, and
+# this job is what makes the second one true.
+#
+# Note the tradeoff this design shares with every other: it does not refresh an already-configured
+# build tree. A given build is only as current as the last time this job actually ran and its
+# commit actually merged.
+name: Update Cross-Origin Storage Public Hash List
+
+on:
+  schedule:
+    # Weekly, early Monday UTC.
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # The script verifies the upstream data against its published companion checksum before
+      # writing anything, so a corrupted or truncated transfer fails this job loudly rather than
+      # landing in something that ships to every user.
+      - name: Fetch, verify, and pack the list
+        run: python3 Tools/Scripts/update-cross-origin-storage-public-hash-list
+
+      - name: Commit the refreshed snapshot
+        run: |
+          if git diff --quiet -- Source/WebKit/Resources/CrossOriginStoragePublicHashList.dat; then
+            echo "Public Hash List is already up to date."
+            exit 0
+          fi
+          entries=$(( $(stat -c%s Source/WebKit/Resources/CrossOriginStoragePublicHashList.dat) / 32 ))
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Source/WebKit/Resources/CrossOriginStoragePublicHashList.dat
+          git commit -m "Update Cross-Origin Storage Public Hash List snapshot ($entries entries)"
+          git push

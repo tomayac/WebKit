@@ -310,6 +310,8 @@ JS_BINDING_IDLS := \
     $(WebCore)/Modules/credentialmanagement/CredentialMediationRequirement.idl \
     $(WebCore)/Modules/credentialmanagement/CredentialRequestOptions.idl \
     $(WebCore)/Modules/credentialmanagement/CredentialsContainer.idl \
+    $(WebCore)/Modules/cross-origin-storage/CrossOriginStorageManager.idl \
+    $(WebCore)/Modules/cross-origin-storage/NavigatorCrossOriginStorage.idl \
     $(WebCore)/Modules/credentialmanagement/FederatedCredentialRequestOptions.idl \
     $(WebCore)/Modules/credentialmanagement/IdentityCredentialRequestOptions.idl \
     $(WebCore)/Modules/credentialmanagement/Navigator+Credentials.idl \

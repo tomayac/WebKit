@@ -25,6 +25,8 @@
 
 #pragma once
 
+#include <WebCore/CrossOriginStorageRequestData.h>
+#include <WebCore/ExceptionOr.h>
 #include <WebCore/FileSystemHandleGlobalIdentifier.h>
 #include <WebCore/FileSystemHandleIdentifier.h>
 #include <WebCore/FileSystemStorageConnection.h>
@@ -52,6 +54,12 @@ public:
     };
     using GetDirectoryCallback = CompletionHandler<void(ExceptionOr<DirectoryInfo>&&)>;
     virtual void fileSystemGetDirectory(ClientOrigin&&, GetDirectoryCallback&&) = 0;
+    // A Cross-Origin Storage handle is addressed exactly like a bucket file system handle once it
+    // has been authorized, so it is described by the same struct and driven by the same
+    // FileSystemStorageConnection afterward.
+    using RequestFileHandleInfo = DirectoryInfo;
+    using RequestFileHandleCallback = CompletionHandler<void(ExceptionOr<RequestFileHandleInfo>&&)>;
+    virtual void crossOriginStorageRequestFileHandle(ClientOrigin&&, CrossOriginStorageRequestData&&, RequestFileHandleCallback&& completionHandler) { completionHandler(Exception { ExceptionCode::NotSupportedError }); }
     using GetEstimateCallback = CompletionHandler<void(ExceptionOr<StorageEstimate>&&)>;
     virtual void getEstimate(ClientOrigin&&, GetEstimateCallback&&) = 0;
     virtual RefPtr<FileSystemStorageConnection> fileSystemStorageConnection() { return nullptr; }

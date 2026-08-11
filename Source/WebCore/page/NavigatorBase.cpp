@@ -33,6 +33,7 @@
 #include "ScriptTrackingPrivacyCategory.h"
 #include "ServiceWorkerContainer.h"
 #include "Settings.h"
+#include "CrossOriginStorageManager.h"
 #include "StorageManager.h"
 #include "WebCoreOpaqueRoot.h"
 #include "WebLockManager.h"
@@ -157,6 +158,14 @@ StorageManager& NavigatorBase::storage()
         m_storageManager = StorageManager::create(*this);
 
     return *m_storageManager;
+}
+
+CrossOriginStorageManager& NavigatorBase::crossOriginStorage()
+{
+    if (!m_crossOriginStorageManager)
+        m_crossOriginStorageManager = CrossOriginStorageManager::create(*this);
+
+    return *m_crossOriginStorageManager;
 }
 
 WebLockManager& NavigatorBase::locks()

@@ -32,6 +32,8 @@ namespace WebKit {
 enum class FileSystemStorageError : uint8_t {
     AccessHandleActive,
     BackendNotSupported,
+    // Cross-Origin Storage: the written bytes did not hash to the requested value.
+    DataMismatch,
     FileNotFound,
     InvalidDataType,
     InvalidModification,
@@ -39,6 +41,9 @@ enum class FileSystemStorageError : uint8_t {
     InvalidState,
     MissingArgument,
     NoModificationAllowed,
+    // Cross-Origin Storage: the entry exists but has a write in progress, so its contents must not
+    // be observable yet -- deliberately distinct from FileNotFound.
+    NotAllowed,
     TypeMismatch,
     QuotaError,
     Unknown
@@ -51,6 +56,8 @@ inline WebCore::Exception convertToException(FileSystemStorageError error)
         return WebCore::Exception { WebCore::ExceptionCode::InvalidStateError, "Some AccessHandle is active"_s };
     case FileSystemStorageError::BackendNotSupported:
         return WebCore::Exception { WebCore::ExceptionCode::NotSupportedError, "Backend does not support this operation"_s };
+    case FileSystemStorageError::DataMismatch:
+        return WebCore::Exception { WebCore::ExceptionCode::DataError, "Written bytes do not hash to the requested value"_s };
     case FileSystemStorageError::FileNotFound:
         return WebCore::Exception { WebCore::ExceptionCode::NotFoundError };
     case FileSystemStorageError::InvalidDataType:
@@ -65,6 +72,8 @@ inline WebCore::Exception convertToException(FileSystemStorageError error)
         return WebCore::Exception { WebCore::ExceptionCode::TypeError, "Required argument is missing"_s };
     case FileSystemStorageError::NoModificationAllowed:
         return WebCore::Exception { WebCore::ExceptionCode::NoModificationAllowedError };
+    case FileSystemStorageError::NotAllowed:
+        return WebCore::Exception { WebCore::ExceptionCode::NotAllowedError, "A write for this hash is still in progress"_s };
     case FileSystemStorageError::TypeMismatch:
         return WebCore::Exception { WebCore::ExceptionCode::TypeMismatchError, "File type is incompatible with handle type"_s };
     case FileSystemStorageError::QuotaError:

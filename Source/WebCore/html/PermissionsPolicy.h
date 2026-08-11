@@ -47,6 +47,7 @@ public:
 
     enum class Feature : uint8_t {
         Camera = 0,
+        CrossOriginStorage,
         Microphone,
         SpeakerSelection,
         DisplayCapture,

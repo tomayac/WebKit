@@ -178,6 +178,9 @@ NetworkProcess/storage/CacheStorageDiskStore.cpp
 NetworkProcess/storage/CacheStorageRecord.cpp
 NetworkProcess/storage/CacheStorageRegistry.cpp
 NetworkProcess/storage/FileSystemStorageManager.cpp
+NetworkProcess/storage/CrossOriginStoragePublicHashList.cpp
+NetworkProcess/storage/CrossOriginStorageRateLimiter.cpp
+NetworkProcess/storage/CrossOriginStorageRegistry.cpp
 NetworkProcess/storage/FileSystemStorageHandle.cpp
 NetworkProcess/storage/FileSystemStorageHandleRegistry.cpp
 NetworkProcess/storage/IDBStorageConnectionToClient.cpp
