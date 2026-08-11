@@ -30,7 +30,7 @@
     SecureContext,
     Exposed=(Window,Worker)
 ] interface CrossOriginStorageManager {
-    Promise<FileSystemFileHandle> requestFileHandle(CrossOriginStorageRequestFileHandleHash hash, optional CrossOriginStorageRequestFileHandleOptions options);
+    Promise<FileSystemFileHandle> requestFileHandle(CrossOriginStorageRequestFileHandleHash hash, optional CrossOriginStorageRequestFileHandleOptions options = {});
 };
 
 dictionary CrossOriginStorageRequestFileHandleHash {

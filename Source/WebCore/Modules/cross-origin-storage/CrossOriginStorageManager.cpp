@@ -41,6 +41,7 @@
 #include "SecurityOrigin.h"
 #include "StorageConnection.h"
 #include "WorkerGlobalScope.h"
+#include "WorkerStorageConnection.h"
 #include <wtf/TZoneMallocInlines.h>
 #include <wtf/URL.h>
 #include <wtf/text/MakeString.h>

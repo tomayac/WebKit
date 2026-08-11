@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <wtf/ExportMacros.h>
 #include <wtf/HashMap.h>
 #include <wtf/MonotonicTime.h>
 #include <wtf/text/WTFString.h>
@@ -49,7 +50,7 @@ public:
     enum class ProbeType : bool { Read, Write };
 
     // Returns false when the origin is over budget.
-    bool tryConsume(const String& origin, ProbeType);
+    WTF_EXPORT_DECLARATION bool tryConsume(const String& origin, ProbeType);
 
     void clear();
 

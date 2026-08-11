@@ -25,8 +25,10 @@
 
 #pragma once
 
+#include <wtf/ExportMacros.h>
 #include <wtf/Forward.h>
 #include <wtf/Lock.h>
+#include <wtf/NeverDestroyed.h>
 #include <wtf/Vector.h>
 #include <wtf/text/WTFString.h>
 
@@ -52,20 +54,22 @@ namespace WebKit {
 // recognized algorithm can never clear this gate; the algorithm is checked before the lookup.
 class CrossOriginStoragePublicHashList {
 public:
-    static CrossOriginStoragePublicHashList& singleton();
+    WTF_EXPORT_DECLARATION static CrossOriginStoragePublicHashList& singleton();
 
     // |algorithm| is a recognized WebCrypto hash algorithm name; |hexValue| is its lowercase hex
     // digest, already validated for shape.
-    bool contains(const String& algorithm, const String& hexValue);
+    WTF_EXPORT_DECLARATION bool contains(const String& algorithm, const String& hexValue);
 
     // Testing hooks: the shipped list intentionally cannot be enumerated or synthesized from
     // web content, so a test needs a way to substitute a known snapshot.
-    void setDataPathForTesting(const String&);
-    void clearForTesting();
+    WTF_EXPORT_DECLARATION void setDataPathForTesting(const String&);
+    WTF_EXPORT_DECLARATION void clearForTesting();
 
-    size_t sizeForTesting();
+    WTF_EXPORT_DECLARATION size_t sizeForTesting();
 
 private:
+    friend class WTF::NeverDestroyed<CrossOriginStoragePublicHashList>;
+
     CrossOriginStoragePublicHashList() = default;
 
     void loadIfNeeded() WTF_REQUIRES_LOCK(m_lock);

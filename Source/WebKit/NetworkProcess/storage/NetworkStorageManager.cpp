@@ -1103,7 +1103,7 @@ void NetworkStorageManager::crossOriginStorageRequestFileHandle(IPC::Connection&
     // Re-validated on this side of the process boundary rather than trusted from the content
     // process: a compromised or simply buggy renderer can speak this IPC protocol directly,
     // bypassing the WebIDL-layer checks entirely, and the hash value is used to build a path.
-    MESSAGE_CHECK_COMPLETION(isValidCrossOriginStorageHash(request.algorithm, request.value), connection, completionHandler(makeUnexpected(FileSystemStorageError::Unknown)));
+    MESSAGE_CHECK_COMPLETION(WebCore::isValidCrossOriginStorageHash(request.algorithm, request.value), connection, completionHandler(makeUnexpected(FileSystemStorageError::Unknown)));
 
     if (!m_fileSystemStorageHandleRegistry)
         return completionHandler(makeUnexpected(FileSystemStorageError::Unknown));

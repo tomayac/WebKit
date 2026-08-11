@@ -540,15 +540,15 @@ std::optional<FileSystemStorageError> CrossOriginStorageRegistry::closeWritable(
     auto expectedValue = entryIterator->value.value;
     bool wasAlreadyWritten = entryIterator->value.state == Entry::State::Written;
 
-    auto digestAlgorithm = PAL::CryptoDigest::Algorithm::SHA_256;
+    auto digestAlgorithm = PAL::Crypto::CryptoDigest::Algorithm::SHA_256;
     if (equalIgnoringASCIICase(algorithm, "SHA-1"_s))
-        digestAlgorithm = PAL::CryptoDigest::Algorithm::SHA_1;
+        digestAlgorithm = PAL::Crypto::CryptoDigest::Algorithm::SHA_1;
     else if (equalIgnoringASCIICase(algorithm, "SHA-384"_s))
-        digestAlgorithm = PAL::CryptoDigest::Algorithm::SHA_384;
+        digestAlgorithm = PAL::Crypto::CryptoDigest::Algorithm::SHA_384;
     else if (equalIgnoringASCIICase(algorithm, "SHA-512"_s))
-        digestAlgorithm = PAL::CryptoDigest::Algorithm::SHA_512;
+        digestAlgorithm = PAL::Crypto::CryptoDigest::Algorithm::SHA_512;
 
-    auto digest = PAL::CryptoDigest::create(digestAlgorithm);
+    auto digest = PAL::Crypto::CryptoDigest::create(digestAlgorithm);
     if (!digest)
         return failWrite(FileSystemStorageError::Unknown);
 
@@ -790,7 +790,7 @@ bool CrossOriginStorageRegistry::persistEntry(const Entry& entry)
         auto file = FileSystem::openFile(temporaryPath, FileSystem::FileOpenMode::Truncate);
         if (!file)
             return false;
-        if (!file.write(contents.span())) {
+        if (!file.write(byteCast<uint8_t>(contents.span()))) {
             file = { };
             FileSystem::deleteFile(temporaryPath);
             return false;

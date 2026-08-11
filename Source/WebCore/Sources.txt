@@ -4101,6 +4101,7 @@ JSCredentialsContainer.cpp
 JSFederatedCredentialRequestOptions.cpp
 JSIdentityCredentialRequestOptions.cpp
 JSOTPCredentialRequestOptions.cpp
+JSCrossOriginStorageManager.cpp
 JSCrypto.cpp
 JSCryptoAesKeyAlgorithm.cpp
 JSCryptoAlgorithmParameters.cpp

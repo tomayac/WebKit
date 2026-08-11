@@ -29,6 +29,7 @@
 
 #include "Helpers/Test.h"
 #include <WebCore/CrossOriginStorageLimits.h>
+#include <wtf/FileHandle.h>
 #include <wtf/FileSystem.h>
 #include <wtf/Vector.h>
 
@@ -37,7 +38,7 @@ namespace TestWebKitAPI {
 using namespace WebCore::CrossOriginStorageLimits;
 
 // Writes a packed Public Hash List containing exactly |digests|, sorted, and points the singleton
-// at it. Returns the directory to clean up.
+// at it. Returns the file to clean up.
 static String writePublicHashList(const Vector<String>& hexDigests)
 {
     Vector<Vector<uint8_t>> packed;
@@ -58,14 +59,14 @@ static String writePublicHashList(const Vector<String>& hexDigests)
     for (auto& digest : packed)
         contents.appendVector(digest);
 
-    auto directory = FileSystem::createTemporaryDirectory("CrossOriginStorageTest"_s);
-    auto path = FileSystem::pathByAppendingComponent(directory, "list.dat"_s);
-    auto file = FileSystem::openFile(path, FileSystem::FileOpenMode::Truncate);
-    file.write(contents.span());
-    file = { };
+    auto path = FileSystem::createTemporaryFile("CrossOriginStorageTest"_s);
+    {
+        auto file = FileSystem::openFile(path, FileSystem::FileOpenMode::Truncate);
+        file.write(contents.span());
+    }
 
     WebKit::CrossOriginStoragePublicHashList::singleton().setDataPathForTesting(path);
-    return directory;
+    return path;
 }
 
 class CrossOriginStoragePublicHashListTest : public testing::Test {
@@ -73,19 +74,19 @@ public:
     void TearDown() final
     {
         WebKit::CrossOriginStoragePublicHashList::singleton().clearForTesting();
-        if (!m_directory.isEmpty())
-            FileSystem::deleteNonEmptyDirectory(m_directory);
+        if (!m_listPath.isEmpty())
+            FileSystem::deleteFile(m_listPath);
     }
 
 protected:
-    String m_directory;
+    String m_listPath;
 };
 
 TEST_F(CrossOriginStoragePublicHashListTest, FindsListedDigestAndRejectsUnlistedOne)
 {
     auto listed = "6d567d7c2f46febcdeaf874614d63e3192ff3a844ee34f8bb63f4c5cf259f233"_s;
     auto alsoListed = "0000000000000000000000000000000000000000000000000000000000000001"_s;
-    m_directory = writePublicHashList({ listed, alsoListed });
+    m_listPath = writePublicHashList({ listed, alsoListed });
 
     auto& list = WebKit::CrossOriginStoragePublicHashList::singleton();
     EXPECT_EQ(list.sizeForTesting(), 2u);
@@ -99,7 +100,7 @@ TEST_F(CrossOriginStoragePublicHashListTest, FindsListedDigestAndRejectsUnlisted
 TEST_F(CrossOriginStoragePublicHashListTest, MatchesAlgorithmNameCaseInsensitively)
 {
     auto listed = "6d567d7c2f46febcdeaf874614d63e3192ff3a844ee34f8bb63f4c5cf259f233"_s;
-    m_directory = writePublicHashList({ listed });
+    m_listPath = writePublicHashList({ listed });
 
     auto& list = WebKit::CrossOriginStoragePublicHashList::singleton();
     EXPECT_TRUE(list.contains("sha-256"_s, listed));
@@ -110,7 +111,7 @@ TEST_F(CrossOriginStoragePublicHashListTest, RejectsEveryAlgorithmOtherThanSHA25
     // The published list only carries SHA-256 digests, so a wildcard-scoped entry hashed with any
     // other recognized algorithm can never clear this gate, whatever its value happens to be.
     auto listed = "6d567d7c2f46febcdeaf874614d63e3192ff3a844ee34f8bb63f4c5cf259f233"_s;
-    m_directory = writePublicHashList({ listed });
+    m_listPath = writePublicHashList({ listed });
 
     auto& list = WebKit::CrossOriginStoragePublicHashList::singleton();
     EXPECT_FALSE(list.contains("SHA-1"_s, listed));
@@ -133,15 +134,16 @@ TEST_F(CrossOriginStoragePublicHashListTest, FailsClosedOnATruncatedList)
 {
     // A file whose length is not a whole number of digests is corrupt. Loading it partially would
     // shift every subsequent digest and make lookups answer about the wrong content.
-    m_directory = FileSystem::createTemporaryDirectory("CrossOriginStorageTest"_s);
-    auto path = FileSystem::pathByAppendingComponent(m_directory, "truncated.dat"_s);
-    auto file = FileSystem::openFile(path, FileSystem::FileOpenMode::Truncate);
-    Vector<uint8_t> partial(31, static_cast<uint8_t>(0));
-    file.write(partial.span());
-    file = { };
+    m_listPath = FileSystem::createTemporaryFile("CrossOriginStorageTest"_s);
+    {
+        auto file = FileSystem::openFile(m_listPath, FileSystem::FileOpenMode::Truncate);
+        // One byte short of a whole digest.
+        Vector<uint8_t> partial(31);
+        file.write(partial.span());
+    }
 
     auto& list = WebKit::CrossOriginStoragePublicHashList::singleton();
-    list.setDataPathForTesting(path);
+    list.setDataPathForTesting(m_listPath);
     EXPECT_EQ(list.sizeForTesting(), 0u);
 }
 

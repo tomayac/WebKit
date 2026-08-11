@@ -127,6 +127,7 @@ namespace WebCore {
     macro(CreateScriptURLCallback) \
     macro(Credential) \
     macro(CredentialsContainer) \
+    macro(CrossOriginStorageManager) \
     macro(CryptoKey) \
     macro(CSPViolationReportBody) \
     macro(CSSAnimation) \
