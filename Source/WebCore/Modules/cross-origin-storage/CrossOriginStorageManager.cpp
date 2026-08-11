@@ -115,12 +115,15 @@ ExceptionOr<CrossOriginStorageRequestData> CrossOriginStorageManager::validateAn
     return request;
 }
 
-struct ConnectionInfo {
+// Named distinctly rather than reusing StorageManager.cpp's identical-looking helper: both files
+// are compiled into unified source bundles, so two file-scope types with the same name would be a
+// redefinition rather than two independent locals.
+struct CrossOriginStorageConnectionInfo {
     ThreadSafeWeakPtr<StorageConnection> connection;
     ClientOrigin origin;
 };
 
-static ExceptionOr<ConnectionInfo> connectionInfo(NavigatorBase* navigator)
+static ExceptionOr<CrossOriginStorageConnectionInfo> crossOriginStorageConnectionInfo(NavigatorBase* navigator)
 {
     if (!navigator)
         return Exception { ExceptionCode::InvalidStateError, "Navigator does not exist"_s };
@@ -138,13 +141,13 @@ static ExceptionOr<ConnectionInfo> connectionInfo(NavigatorBase* navigator)
 
     if (RefPtr document = dynamicDowncast<Document>(*context)) {
         if (RefPtr connection = document->storageConnection())
-            return ConnectionInfo { *connection, { document->topOrigin().data(), origin->data() } };
+            return CrossOriginStorageConnectionInfo { *connection, { document->topOrigin().data(), origin->data() } };
 
         return Exception { ExceptionCode::InvalidStateError, "Connection is invalid"_s };
     }
 
     if (RefPtr globalScope = dynamicDowncast<WorkerGlobalScope>(*context))
-        return ConnectionInfo { globalScope->storageConnection(), { globalScope->topOrigin().data(), origin->data() } };
+        return CrossOriginStorageConnectionInfo { globalScope->storageConnection(), { globalScope->topOrigin().data(), origin->data() } };
 
     return Exception { ExceptionCode::NotSupportedError };
 }
@@ -166,7 +169,7 @@ void CrossOriginStorageManager::requestFileHandle(RequestFileHandleHash&& hash, 
     if (requestOrException.hasException())
         return promise.reject(requestOrException.releaseException());
 
-    auto connectionInfoOrException = connectionInfo(navigator.get());
+    auto connectionInfoOrException = crossOriginStorageConnectionInfo(navigator.get());
     if (connectionInfoOrException.hasException())
         return promise.reject(connectionInfoOrException.releaseException());
 

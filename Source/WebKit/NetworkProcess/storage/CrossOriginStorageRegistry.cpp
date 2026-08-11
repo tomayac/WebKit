@@ -45,8 +45,8 @@
 #include <wtf/URL.h>
 #include <wtf/text/MakeString.h>
 #include <wtf/text/StringBuilder.h>
-#include <wtf/text/StringView.h>
 #include <wtf/text/StringToIntegerConversion.h>
+#include <wtf/text/StringView.h>
 
 namespace WebKit {
 
@@ -72,6 +72,11 @@ CrossOriginStorageRegistry::CrossOriginStorageRegistry(String&& path, FileSystem
     , m_volumeCapacityOverride(volumeCapacityOverride)
 {
     ASSERT(!RunLoop::isMain());
+
+    // Created up front rather than on the first write, so that the storage budget -- which is a
+    // fraction of the capacity of the volume this directory sits on -- can be computed at any
+    // point without depending on whether some earlier operation happened to create it.
+    FileSystem::makeAllDirectories(m_path);
 
     m_fileSystemStorageManager = FileSystemStorageManager::create(FileSystem::pathByAppendingComponent(m_path, bytesDirectoryName), registry, [weakThis = WeakPtr { *this }](uint64_t spaceRequested, CompletionHandler<void(bool)>&& completionHandler) {
         RefPtr protectedThis = weakThis.get();
@@ -659,7 +664,10 @@ uint64_t CrossOriginStorageRegistry::perOriginBudget() const
 void CrossOriginStorageRegistry::chargeUsage(const String& origin, uint64_t size)
 {
     m_totalBytes += size;
-    m_bytesByOrigin.ensure(origin, [] { return static_cast<uint64_t>(0); }).iterator->value += size;
+    auto addResult = m_bytesByOrigin.ensure(origin, [] {
+        return static_cast<uint64_t>(0);
+    });
+    addResult.iterator->value += size;
 }
 
 void CrossOriginStorageRegistry::dischargeUsage(const String& origin, uint64_t size)

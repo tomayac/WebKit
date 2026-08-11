@@ -54,15 +54,8 @@ struct CrossOriginStorageRequestData {
     // Serialized origins, deduplicated. Only non-empty when originsScope is List.
     Vector<String> origins;
 
-    CrossOriginStorageRequestData isolatedCopy() const &
-    {
-        return { algorithm.isolatedCopy(), value.isolatedCopy(), create, originsScope, crossThreadCopy(origins) };
-    }
-
-    CrossOriginStorageRequestData isolatedCopy() &&
-    {
-        return { WTF::move(algorithm).isolatedCopy(), WTF::move(value).isolatedCopy(), create, originsScope, crossThreadCopy(WTF::move(origins)) };
-    }
+    CrossOriginStorageRequestData isolatedCopy() const & { return { algorithm.isolatedCopy(), value.isolatedCopy(), create, originsScope, crossThreadCopy(origins) }; }
+    CrossOriginStorageRequestData isolatedCopy() && { return { WTF::move(algorithm).isolatedCopy(), WTF::move(value).isolatedCopy(), create, originsScope, crossThreadCopy(WTF::move(origins)) }; }
 };
 
 // The hash algorithms recognized by the Web Cryptography API, with the hex length of each one's

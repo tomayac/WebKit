@@ -60,10 +60,12 @@ String CrossOriginStoragePublicHashList::defaultDataPath()
 #if PLATFORM(COCOA)
     // Resolved relative to the installed framework's own resources: this is compiled-application
     // data shipped alongside the binary, not per-user state in a profile directory.
-    if (auto bundle = CFBundleGetBundleWithIdentifier(CFSTR("com.apple.WebKit"))) {
-        auto fileName = adoptCF(CFStringCreateWithCString(kCFAllocatorDefault, dataFileName.characters(), kCFStringEncodingUTF8));
-        if (auto url = adoptCF(CFBundleCopyResourceURL(bundle, fileName.get(), nullptr, nullptr))) {
-            if (auto path = adoptCF(CFURLCopyFileSystemPath(url.get(), kCFURLPOSIXPathStyle)))
+    if (auto* bundle = CFBundleGetBundleWithIdentifier(CFSTR("com.apple.WebKit"))) {
+        RetainPtr<CFStringRef> fileName = adoptCF(CFStringCreateWithCString(kCFAllocatorDefault, dataFileName.characters(), kCFStringEncodingUTF8));
+        RetainPtr<CFURLRef> url = adoptCF(CFBundleCopyResourceURL(bundle, fileName.get(), nullptr, nullptr));
+        if (url) {
+            RetainPtr<CFStringRef> path = adoptCF(CFURLCopyFileSystemPath(url.get(), kCFURLPOSIXPathStyle));
+            if (path)
                 return path.get();
         }
     }
@@ -133,15 +135,16 @@ bool CrossOriginStoragePublicHashList::contains(const String& algorithm, const S
         return false;
 
     auto data = m_packedDigests.span();
+    auto target = std::span<const uint8_t> { *digest };
     size_t low = 0;
     size_t high = count;
     while (low < high) {
         size_t middle = low + (high - low) / 2;
         auto candidate = data.subspan(middle * digestSize, digestSize);
-        int comparison = memcmp(candidate.data(), digest->data(), digestSize);
-        if (!comparison)
+        auto comparison = compareSpans(candidate, target);
+        if (comparison == std::strong_ordering::equal)
             return true;
-        if (comparison < 0)
+        if (comparison == std::strong_ordering::less)
             low = middle + 1;
         else
             high = middle;
