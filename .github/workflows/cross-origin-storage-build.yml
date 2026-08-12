@@ -229,10 +229,18 @@ jobs:
           cp -R WebKitBuild/Release/bin "$out/" 2>/dev/null || true
           cp -R WebKitBuild/Release/lib "$out/" 2>/dev/null || true
 
+          # The GTK/WPE build compiles in the Public Hash List's *installed*
+          # path, which does not exist in an unpacked tarball -- and a missing
+          # list fails closed silently, so wildcard-scoped entries would simply
+          # never be disclosed with no diagnostic. Ship the file and point the
+          # runtime override at it.
+          cp Source/WebKit/Resources/CrossOriginStoragePublicHashList.dat "$out/"
+
           cat > "$out/run-minibrowser.sh" <<'LAUNCHER'
           #!/bin/sh
           DIR="$(cd "$(dirname "$0")" && pwd)"
           export LD_LIBRARY_PATH="$DIR/lib:$LD_LIBRARY_PATH"
+          export WEBKIT_CROSS_ORIGIN_STORAGE_PUBLIC_HASH_LIST="$DIR/CrossOriginStoragePublicHashList.dat"
           exec "$DIR/bin/MiniBrowser" "$@"
           LAUNCHER
           chmod +x "$out/run-minibrowser.sh"

@@ -53,6 +53,16 @@ add_definitions(-DLIBDIR="${LIB_INSTALL_DIR}")
 add_definitions(-DPKGLIBDIR="${LIB_INSTALL_DIR}/wpe-webkit-${WPE_API_VERSION}")
 add_definitions(-DPKGLIBEXECDIR="${LIBEXEC_INSTALL_DIR}")
 add_definitions(-DDATADIR="${CMAKE_INSTALL_FULL_DATADIR}")
+
+# See the equivalent comment in PlatformGTK.cmake: without this file the Public
+# Hash List loads empty and wildcard-scoped Cross-Origin Storage entries are
+# never disclosed cross-origin, with no diagnostic.
+set(WebKit_CROSS_ORIGIN_STORAGE_PUBLIC_HASH_LIST_DIR
+    "${CMAKE_INSTALL_FULL_DATADIR}/wpe-webkit-${WPE_API_VERSION}")
+add_definitions(-DWEBKIT_CROSS_ORIGIN_STORAGE_PUBLIC_HASH_LIST_PATH="${WebKit_CROSS_ORIGIN_STORAGE_PUBLIC_HASH_LIST_DIR}/CrossOriginStoragePublicHashList.dat")
+install(FILES "${WEBKIT_DIR}/Resources/CrossOriginStoragePublicHashList.dat"
+        DESTINATION "${WebKit_CROSS_ORIGIN_STORAGE_PUBLIC_HASH_LIST_DIR}"
+)
 add_definitions(-DLOCALEDIR="${CMAKE_INSTALL_FULL_LOCALEDIR}")
 
 if (NOT DEVELOPER_MODE AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")

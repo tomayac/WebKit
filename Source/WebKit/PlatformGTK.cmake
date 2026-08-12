@@ -35,6 +35,18 @@ endif ()
 add_definitions(-DPKGLIBEXECDIR="${LIBEXEC_INSTALL_DIR}")
 add_definitions(-DLOCALEDIR="${CMAKE_INSTALL_FULL_LOCALEDIR}")
 add_definitions(-DDATADIR="${CMAKE_INSTALL_FULL_DATADIR}")
+
+# The Public Hash List is the gate that makes "*"-scoped Cross-Origin Storage
+# disclosure safe, and it fails closed: without this file the list loads empty
+# and no wildcard-scoped entry is ever disclosed cross-origin, silently. The
+# Cocoa port finds it in the framework bundle; here it is installed beside the
+# library's other data files and its absolute path compiled in.
+set(WebKit_CROSS_ORIGIN_STORAGE_PUBLIC_HASH_LIST_DIR
+    "${CMAKE_INSTALL_FULL_DATADIR}/webkitgtk-${WEBKITGTK_API_VERSION}")
+add_definitions(-DWEBKIT_CROSS_ORIGIN_STORAGE_PUBLIC_HASH_LIST_PATH="${WebKit_CROSS_ORIGIN_STORAGE_PUBLIC_HASH_LIST_DIR}/CrossOriginStoragePublicHashList.dat")
+install(FILES "${WEBKIT_DIR}/Resources/CrossOriginStoragePublicHashList.dat"
+        DESTINATION "${WebKit_CROSS_ORIGIN_STORAGE_PUBLIC_HASH_LIST_DIR}"
+)
 add_definitions(-DLIBDIR="${LIB_INSTALL_DIR}")
 add_definitions(-DPKGLIBDIR="${LIB_INSTALL_DIR}/webkit${WEBKITGTK_API_INFIX}gtk-${WEBKITGTK_API_VERSION}")
 
