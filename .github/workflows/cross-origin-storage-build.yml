@@ -1,0 +1,261 @@
+name: Cross-Origin Storage build (macOS / Linux)
+# GitHub sometimes keeps showing a workflow's *first-ever* `name:` in the
+# Actions UI/API even after the YAML's own `name:` is edited -- `run-name:` is
+# evaluated fresh on every run and isn't subject to that staleness, so it's the
+# reliable way to keep each run's own displayed title accurate.
+run-name: Cross-Origin Storage build (macOS / Linux)
+
+# Builds this branch's WebKit and publishes MiniBrowser plus the frameworks it
+# needs as a GitHub Release, so testers can try navigator.crossOriginStorage
+# without building WebKit themselves. This is a personal fork's workflow for one
+# in-development feature branch, not part of WebKit's own CI.
+#
+# Manual dispatch only. A full WebKit build is 45 minutes to several hours per
+# platform with no incremental caching, so there's no reason to pay that on
+# every commit -- trigger it from the Actions tab or `gh workflow run` when you
+# actually want builds to hand out.
+#
+# ---------------------------------------------------------------------------
+# Platform coverage, and why it stops where it does
+#
+# WebKit has more ports than macOS. The ones that produce something a tester can
+# actually double-click and browse with are macOS (MiniBrowser.app), WebKitGTK,
+# and WinCairo; WPE is buildable here too but targets embedded/headless use and
+# has no comparable desktop browser UI, and the iOS/visionOS/PlayStation ports
+# either can't be distributed this way or need a non-public SDK. So this
+# workflow covers macOS arm64, macOS x86_64, and Linux GTK x86_64.
+#
+# NONE OF THESE LEGS HAS BEEN RUN YET. Treat all three as best-effort until a
+# run has actually gone green -- see the disk-space note below, which is the
+# most likely reason a leg fails.
+#
+# ---------------------------------------------------------------------------
+# The disk-space problem, stated plainly
+#
+# A GitHub-hosted runner gives you roughly 14 GB free. A WebKit build tree is
+# much larger than that: the tree this workflow was written against measured
+# 33 GB total (6.8 GB WebCore.build, 5.4 GB WebKit.build, 5.3 GB precompiled
+# headers, 3.2 GB JavaScriptCore.build, 2.3 GB XCBuildData, 5.7 GB of actual
+# products). That figure is inflated by ~20 incremental rebuilds, so a single
+# clean build will be smaller -- but probably not 14 GB smaller.
+#
+# The steps below reclaim what they can and turn off dSYM generation, which is
+# pure overhead for a test build. If a leg still dies with a disk error, the
+# realistic options are a larger runner or a self-hosted one; there is no
+# clever flag that makes a WebKit build small.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Which platforms to build
+        type: choice
+        default: all
+        options: [all, macos-arm64, macos-x86_64, linux-gtk]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            id: macos-arm64
+            os: macos-15
+            port: mac
+          - name: macOS x86_64
+            id: macos-x86_64
+            # GitHub's Intel macOS runner label has changed more than once as
+            # older images are retired. If this label is rejected, `macos-13`
+            # is the previous Intel image; check the runner-images repo for
+            # what's currently offered before assuming this leg is broken.
+            os: macos-15-intel
+            port: mac
+          - name: Linux GTK x86_64
+            id: linux-gtk
+            os: ubuntu-22.04
+            port: gtk
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    # A hosted runner's own ceiling is 6 hours; this asks for all of it.
+    timeout-minutes: 360
+    if: ${{ github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.id }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Reclaim disk space (Linux)
+        if: matrix.port == 'gtk'
+        run: |
+          # The preinstalled Android/.NET/GHC/CodeQL toolchains are worth
+          # ~25 GB on a stock Ubuntu runner and none of them is used here.
+          # Removing them is the difference between this build fitting and
+          # not, so failing to remove one is worth knowing about, but isn't
+          # itself fatal -- hence `|| true` per entry rather than `set -e`.
+          df -h /
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /usr/local/share/powershell || true
+          sudo rm -rf /usr/share/swift || true
+          sudo apt-get clean || true
+          df -h /
+
+      - name: Reclaim disk space (macOS)
+        if: matrix.port == 'mac'
+        run: |
+          df -h /
+          # iOS/tvOS/watchOS simulator runtimes are several GB each and this
+          # build targets macOS only.
+          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes || true
+          sudo rm -rf ~/Library/Developer/Xcode/iOS\ DeviceSupport || true
+          df -h /
+
+      - name: Install build dependencies (Linux)
+        if: matrix.port == 'gtk'
+        run: |
+          sudo Tools/gtk/install-dependencies
+          sudo apt-get install -y ninja-build
+
+      - name: Build
+        env:
+          # Debug symbols are dead weight for a hand-testing build and dSYM
+          # generation is a large chunk of both time and disk.
+          DEBUG_INFORMATION_FORMAT: dwarf
+        run: |
+          set -eux
+          if [ "${{ matrix.port }}" = "mac" ]; then
+            Tools/Scripts/build-webkit --release
+          else
+            Tools/Scripts/build-webkit --gtk --release
+          fi
+
+      - name: Package (macOS)
+        if: matrix.port == 'mac'
+        id: package-mac
+        run: |
+          set -eux
+          out="CrossOriginStorage-WebKit-${{ matrix.id }}"
+          mkdir -p "$out"
+
+          # MiniBrowser.app is not self-contained: it resolves WebKit,
+          # WebCore, JavaScriptCore and friends through DYLD_FRAMEWORK_PATH at
+          # launch, and the auxiliary processes live in the .xpc bundles beside
+          # them. Shipping the app alone produces something that launches and
+          # then immediately fails to load any page, so copy the whole set.
+          cp -R WebKitBuild/Release/MiniBrowser.app "$out/"
+          cp -R WebKitBuild/Release/*.framework "$out/"
+          cp -R WebKitBuild/Release/*.xpc "$out/" 2>/dev/null || true
+          # The Public Hash List ships inside WebKit.framework's Resources, so
+          # it comes along with the framework copy above -- but a missing list
+          # fails closed silently (wildcard-scoped entries simply stop being
+          # disclosed), so check rather than assume.
+          test -f "$out/WebKit.framework/Versions/A/Resources/CrossOriginStoragePublicHashList.dat"
+
+          # dSYMs are excluded deliberately: they roughly double the download
+          # for no benefit to someone exercising the API from a web page.
+          rm -rf "$out"/*.dSYM
+
+          cat > "$out/run-minibrowser.sh" <<'LAUNCHER'
+          #!/bin/sh
+          # MiniBrowser has to be told where its frameworks are; without this it
+          # will pick up the system WebKit instead, which is not this build.
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_FRAMEWORK_PATH="$DIR"
+          export DYLD_LIBRARY_PATH="$DIR"
+          exec "$DIR/MiniBrowser.app/Contents/MacOS/MiniBrowser" "$@"
+          LAUNCHER
+          chmod +x "$out/run-minibrowser.sh"
+
+          cat > "$out/README.txt" <<'READMETXT'
+          Cross-Origin Storage test build of WebKit (MiniBrowser)
+
+          Run ./run-minibrowser.sh -- not MiniBrowser.app directly, which would
+          load the system WebKit rather than this build.
+
+          macOS will refuse to open this the first time because it is unsigned
+          and downloaded from the internet. Clear the quarantine flag first:
+
+              xattr -dr com.apple.quarantine .
+
+          navigator.crossOriginStorage is enabled by default in this build, so
+          it is available immediately on any secure context (https:, or
+          http://localhost). No flags to set.
+          READMETXT
+
+          tar -czf "$out.tar.gz" "$out"
+          echo "path=$out.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Package (Linux)
+        if: matrix.port == 'gtk'
+        id: package-linux
+        run: |
+          set -eux
+          out="CrossOriginStorage-WebKit-${{ matrix.id }}"
+          mkdir -p "$out"
+
+          # A GTK build's MiniBrowser links against the freshly built
+          # libwebkit2gtk plus a long tail of system libraries, so this tarball
+          # is only usable on a distribution close to the one it was built on
+          # (Ubuntu 22.04 here). That is a real limitation of shipping a bare
+          # tarball rather than a Flatpak, and is called out in the README.
+          cp -R WebKitBuild/Release/bin "$out/" 2>/dev/null || true
+          cp -R WebKitBuild/Release/lib "$out/" 2>/dev/null || true
+
+          cat > "$out/run-minibrowser.sh" <<'LAUNCHER'
+          #!/bin/sh
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export LD_LIBRARY_PATH="$DIR/lib:$LD_LIBRARY_PATH"
+          exec "$DIR/bin/MiniBrowser" "$@"
+          LAUNCHER
+          chmod +x "$out/run-minibrowser.sh"
+
+          cat > "$out/README.txt" <<'READMETXT'
+          Cross-Origin Storage test build of WebKitGTK (MiniBrowser)
+
+          Run ./run-minibrowser.sh
+
+          Built on Ubuntu 22.04 and dynamically linked against that release's
+          system libraries. On a materially different distribution it will most
+          likely fail to start with a missing-library error; building from
+          source is the fallback there.
+
+          navigator.crossOriginStorage is enabled by default in this build, so
+          it is available immediately on any secure context (https:, or
+          http://localhost). No flags to set.
+          READMETXT
+
+          tar -czf "$out.tar.gz" "$out"
+          echo "path=$out.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to the cross-origin-storage-latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: cross-origin-storage-latest
+          name: Cross-Origin Storage (latest WebKit build)
+          body: |
+            Automated build of the `cross-origin-storage` branch at
+            ${{ github.sha }}.
+
+            `navigator.crossOriginStorage` is enabled by default in these
+            builds, so it is available on any secure context with no flags to
+            set. Each archive contains a `run-minibrowser.sh` launcher and a
+            README; on macOS you will need to clear the quarantine flag
+            (`xattr -dr com.apple.quarantine .`) because these builds are
+            unsigned.
+
+            These are throwaway builds of an in-development implementation of a
+            draft WICG proposal, published so the API can be tried without
+            building WebKit from source. They are not a WebKit release and are
+            not signed, notarized, or supported.
+          prerelease: true
+          files: ${{ steps.package-mac.outputs.path || steps.package-linux.outputs.path }}
