@@ -58,33 +58,51 @@ permissions:
   contents: write
 
 jobs:
+  # The obvious way to honour the `platforms` input would be a job-level
+  # `if: inputs.platforms == 'all' || inputs.platforms == matrix.id`, but the
+  # `matrix` context isn't available there (only `github`, `inputs`, `needs`
+  # and `vars` are), and using it makes the whole file fail to parse -- no jobs
+  # run at all. So the selection happens up front instead: this job emits the
+  # matrix that `build` then expands, which also avoids booting runners for
+  # platforms that were only going to skip.
+  select:
+    name: Select platforms
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - name: Filter the platform list by the dispatch input
+        id: select
+        env:
+          WANTED: ${{ inputs.platforms }}
+        run: |
+          set -eu
+          # GitHub's Intel macOS runner label has changed more than once as
+          # older images are retired. If `macos-15-intel` is rejected,
+          # `macos-13` is the previous Intel image; check the runner-images
+          # repo for what's currently offered before assuming that leg is
+          # broken.
+          include="$(jq -c --arg wanted "$WANTED" \
+            'map(select($wanted == "all" or .id == $wanted))' <<'PLATFORMS'
+          [
+            {"name": "macOS arm64",      "id": "macos-arm64",  "os": "macos-15",        "port": "mac"},
+            {"name": "macOS x86_64",     "id": "macos-x86_64", "os": "macos-15-intel",  "port": "mac"},
+            {"name": "Linux GTK x86_64", "id": "linux-gtk",    "os": "ubuntu-22.04",    "port": "gtk"}
+          ]
+          PLATFORMS
+          )"
+          echo "matrix={\"include\":$include}" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: select
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: macOS arm64
-            id: macos-arm64
-            os: macos-15
-            port: mac
-          - name: macOS x86_64
-            id: macos-x86_64
-            # GitHub's Intel macOS runner label has changed more than once as
-            # older images are retired. If this label is rejected, `macos-13`
-            # is the previous Intel image; check the runner-images repo for
-            # what's currently offered before assuming this leg is broken.
-            os: macos-15-intel
-            port: mac
-          - name: Linux GTK x86_64
-            id: linux-gtk
-            os: ubuntu-22.04
-            port: gtk
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     # A hosted runner's own ceiling is 6 hours; this asks for all of it.
     timeout-minutes: 360
-    if: ${{ github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.id }}
 
     steps:
       - uses: actions/checkout@v4
