@@ -57,6 +57,11 @@ public:
     void createWritable(const CreateWritableOptions&, DOMPromiseDeferred<IDLInterface<FileSystemWritableFileStream>>&&);
 
     void closeWritable(FileSystemWritableFileStreamIdentifier, FileSystemWriteCloseReason);
+    // Settles |promise| with the backend's result instead of discarding it. Cross-Origin Storage
+    // verifies the written bytes against the entry's hash while closing, and the specification
+    // requires that verification to run before the closing promise is fulfilled, so its outcome
+    // has to be able to reach script.
+    void closeWritable(FileSystemWritableFileStreamIdentifier, FileSystemWriteCloseReason, DOMPromiseDeferred<void>&&);
     void executeCommandForWritable(FileSystemWritableFileStreamIdentifier, FileSystemWriteCommandType, std::optional<uint64_t> position, std::optional<uint64_t> size, std::span<const uint8_t> dataBytes, bool hasDataError, DOMPromiseDeferred<void>&&);
 
 private:

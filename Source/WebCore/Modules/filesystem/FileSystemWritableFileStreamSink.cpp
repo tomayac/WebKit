@@ -188,8 +188,10 @@ void FileSystemWritableFileStreamSink::close(JSDOMGlobalObject&, DOMPromiseDefer
     ASSERT(!m_isClosed);
 
     m_isClosed = true;
-    protect(m_source)->closeWritable(m_identifier, FileSystemWriteCloseReason::Completed);
-    promise.resolve();
+    // The closing promise settles on the backend's result rather than resolving unconditionally:
+    // closing is where the bytes are actually published, so a failure there -- a Cross-Origin
+    // Storage hash mismatch, or an ordinary I/O error -- has to be observable to script.
+    protect(m_source)->closeWritable(m_identifier, FileSystemWriteCloseReason::Completed, WTF::move(promise));
 }
 
 void FileSystemWritableFileStreamSink::abort(JSDOMGlobalObject&, JSC::JSValue, DOMPromiseDeferred<void>&& promise)

@@ -200,6 +200,17 @@ void FileSystemFileHandle::closeWritable(FileSystemWritableFileStreamIdentifier 
         connection().closeWritable(identifier(), streamIdentifier, reason, [](auto) { });
 }
 
+void FileSystemFileHandle::closeWritable(FileSystemWritableFileStreamIdentifier streamIdentifier, FileSystemWriteCloseReason reason, DOMPromiseDeferred<void>&& promise)
+{
+    connection().unregisterFileSystemWritable(streamIdentifier);
+    if (isClosed())
+        return promise.reject(Exception { ExceptionCode::InvalidStateError });
+
+    connection().closeWritable(identifier(), streamIdentifier, reason, [promise = WTF::move(promise)](auto result) mutable {
+        promise.settle(WTF::move(result));
+    });
+}
+
 void FileSystemFileHandle::executeCommandForWritable(FileSystemWritableFileStreamIdentifier streamIdentifier, FileSystemWriteCommandType type, std::optional<uint64_t> position, std::optional<uint64_t> size, std::span<const uint8_t> dataBytes, bool hasDataError, DOMPromiseDeferred<void>&& promise)
 {
     if (isClosed())
