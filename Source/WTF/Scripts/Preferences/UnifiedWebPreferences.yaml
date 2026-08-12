@@ -2383,7 +2383,7 @@ CrossOriginOpenerPolicyEnabled:
 
 CrossOriginStorageEnabled:
   type: bool
-  status: testable
+  status: stable
   category: dom
   humanReadableName: "Cross-Origin Storage API"
   humanReadableDescription: "Enable the Cross-Origin Storage API (navigator.crossOriginStorage)"
@@ -2391,9 +2391,9 @@ CrossOriginStorageEnabled:
     WebKitLegacy:
       default: false
     WebKit:
-      default: false
+      default: true
     WebCore:
-      default: false
+      default: true
   disableInLockdownMode: true
   sharedPreferenceForWebProcess: true
 
