@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 Thomas Steiner. All rights reserved.
+ * Copyright (C) 2026 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -331,11 +331,16 @@ bool CrossOriginStorageRegistry::determineDisclosure(const Entry& entry, const S
 
 bool CrossOriginStorageRegistry::shouldGrease(const Entry& entry)
 {
+    return shouldGrease(entry.size);
+}
+
+bool CrossOriginStorageRegistry::shouldGrease(uint64_t entrySize)
+{
     // Never GREASE an entry large enough that a spurious re-download would be clearly
     // disproportionate to the privacy benefit: on a small file a false negative costs a cheap
     // re-fetch, but on gigabyte-scale weights it would impose a real, observable bandwidth cost —
     // and that cost difference is itself observable, which would defeat the purpose.
-    if (entry.size >= greaseSizeCeiling)
+    if (entrySize >= greaseSizeCeiling)
         return false;
 
     // A predictable roll is not a roll at all: if an adversary can anticipate which requests get
@@ -954,6 +959,55 @@ void CrossOriginStorageRegistry::deleteDataForRegistrableDomains(const HashSet<W
             return false;
         return domains.contains(WebCore::RegistrableDomain::uncheckedCreateFromHost(url.host().toString()));
     });
+}
+
+
+void CrossOriginStorageRegistry::addWrittenEntryForTesting(const String& algorithm, const String& value, const String& storingOrigin, uint64_t size, WebCore::CrossOriginStorageOriginsScope originsScope, const Vector<String>& origins, WallTime lastReadTime)
+{
+    Entry entry;
+    entry.algorithm = algorithm;
+    entry.value = value;
+    entry.state = Entry::State::Written;
+    entry.originsScope = originsScope;
+    entry.origins = origins;
+    entry.size = size;
+    entry.lastReadTime = lastReadTime;
+    entry.createdTime = lastReadTime;
+    entry.attributedOrigin = storingOrigin;
+    if (!storingOrigin.isEmpty())
+        entry.storingOrigins.append(storingOrigin);
+
+    // Written on disk as well as in memory: loadEntriesFromDisk() discards an
+    // entry whose bytes file is missing or the wrong length, so an in-memory
+    // only fixture would make every persistence assertion vacuously pass.
+    auto path = bytesPath(entry);
+    FileSystem::makeAllDirectories(FileSystem::parentPath(path));
+    {
+        auto file = FileSystem::openFile(path, FileSystem::FileOpenMode::Truncate);
+        Vector<uint8_t> bytes(size);
+        file.write(bytes.span());
+    }
+
+    chargeUsage(entry.attributedOrigin, entry.size);
+    auto key = entryKey(algorithm, value);
+    persistEntry(entry);
+    m_entries.set(key, WTF::move(entry));
+}
+
+bool CrossOriginStorageRegistry::containsWrittenEntryForTesting(const String& algorithm, const String& value)
+{
+    auto* entry = findLiveEntry(entryKey(algorithm, value));
+    return entry && entry->state == Entry::State::Written;
+}
+
+bool CrossOriginStorageRegistry::makeRoomForWriteForTesting(const String& writingOrigin, uint64_t size)
+{
+    return makeRoomForWrite(writingOrigin, size);
+}
+
+bool CrossOriginStorageRegistry::shouldGreaseForTesting(uint64_t entrySize)
+{
+    return shouldGrease(entrySize);
 }
 
 } // namespace WebKit

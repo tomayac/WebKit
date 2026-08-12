@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 Thomas Steiner. All rights reserved.
+ * Copyright (C) 2026 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -101,6 +101,20 @@ public:
     void deleteDataForRegistrableDomains(const HashSet<WebCore::RegistrableDomain>&);
     uint64_t totalBytes() const { return m_totalBytes; }
 
+    // Testing surface. The behaviours below are reachable from script only
+    // indirectly and only nondeterministically -- eviction depends on a budget
+    // derived from disk capacity, persistence needs a process restart to
+    // observe, and GREASE'ing is deliberately unobservable by design -- so they
+    // are driven here directly instead, which is also where their failure modes
+    // are legible.
+    WTF_EXPORT_DECLARATION void addWrittenEntryForTesting(const String& algorithm, const String& value, const String& storingOrigin, uint64_t size, WebCore::CrossOriginStorageOriginsScope, const Vector<String>& origins, WallTime lastReadTime);
+    WTF_EXPORT_DECLARATION bool containsWrittenEntryForTesting(const String& algorithm, const String& value);
+    WTF_EXPORT_DECLARATION size_t entryCountForTesting() const { return m_entries.size(); }
+    WTF_EXPORT_DECLARATION uint64_t bytesForOriginForTesting(const String& origin) const { return m_bytesByOrigin.get(origin); }
+    WTF_EXPORT_DECLARATION bool makeRoomForWriteForTesting(const String& writingOrigin, uint64_t size);
+    WTF_EXPORT_DECLARATION uint64_t globalBudgetForTesting() const { return globalBudget(); }
+    WTF_EXPORT_DECLARATION static bool shouldGreaseForTesting(uint64_t entrySize);
+
 private:
     CrossOriginStorageRegistry(String&& path, FileSystemStorageHandleRegistry&, std::optional<uint64_t> volumeCapacityOverride);
 
@@ -150,6 +164,7 @@ private:
     // https://wicg.github.io/cross-origin-storage/#apply-availability-gating
     bool applyAvailabilityGating(Entry&, const String& requestingOrigin);
     static bool shouldGrease(const Entry&);
+    static bool shouldGrease(uint64_t entrySize);
 
     // https://wicg.github.io/cross-origin-storage/#upgrade-resource-visibility
     void upgradeResourceVisibility(Entry&, WebCore::CrossOriginStorageOriginsScope, const Vector<String>& requestedOrigins);
