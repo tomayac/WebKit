@@ -569,7 +569,11 @@ std::optional<FileSystemStorageError> CrossOriginStorageRegistry::closeWritable(
     }
     file = { };
 
-    if (digest->toHexString() != expectedValue)
+    // toHexString() emits uppercase, but a COS hash value is normatively lowercase, so comparing
+    // the two directly fails for *every* write -- including correct ones. The specification makes
+    // the value lowercase precisely so that this stays a plain string comparison rather than an
+    // ASCII case-insensitive one, so lowercase the digest rather than loosening the comparison.
+    if (digest->toHexString().convertToASCIILowercase() != expectedValue)
         return failWrite(FileSystemStorageError::DataMismatch);
 
     // Content-addressability means an origin rewriting bytes it already stored consumes no
