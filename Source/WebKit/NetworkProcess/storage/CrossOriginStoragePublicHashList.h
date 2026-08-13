@@ -25,7 +25,6 @@
 
 #pragma once
 
-#include <wtf/ExportMacros.h>
 #include <wtf/Forward.h>
 #include <wtf/Lock.h>
 #include <wtf/NeverDestroyed.h>
@@ -54,18 +53,17 @@ namespace WebKit {
 // recognized algorithm can never clear this gate; the algorithm is checked before the lookup.
 class CrossOriginStoragePublicHashList {
 public:
-    WTF_EXPORT_DECLARATION static CrossOriginStoragePublicHashList& singleton();
+    static CrossOriginStoragePublicHashList& singleton();
 
     // |algorithm| is a recognized WebCrypto hash algorithm name; |hexValue| is its lowercase hex
     // digest, already validated for shape.
-    WTF_EXPORT_DECLARATION bool contains(const String& algorithm, const String& hexValue);
+    bool contains(const String& algorithm, const String& hexValue);
 
-    // Testing hooks: the shipped list intentionally cannot be enumerated or synthesized from
-    // web content, so a test needs a way to substitute a known snapshot.
-    WTF_EXPORT_DECLARATION void setDataPathForTesting(const String&);
-    WTF_EXPORT_DECLARATION void clearForTesting();
-
-    WTF_EXPORT_DECLARATION size_t sizeForTesting();
+    // No testing hooks, and nothing here is exported: WebKit.framework hides its C++ symbols, and
+    // widening that for a test's benefit is not something the rest of the tree does. The lookup
+    // this class exists to perform is CrossOriginStoragePolicy::PublicHashList::packedListContains,
+    // a pure function over the loaded bytes, and it is tested directly. What is left here is the
+    // reading and caching of the file, which is what genuinely needs the class.
 
 private:
     friend class WTF::NeverDestroyed<CrossOriginStoragePublicHashList>;
@@ -77,10 +75,8 @@ private:
 
     Lock m_lock;
     bool m_loaded WTF_GUARDED_BY_LOCK(m_lock) { false };
-    String m_dataPathOverride WTF_GUARDED_BY_LOCK(m_lock);
-    // Sorted, packed, 32-byte digests with no delimiters, so that a lookup is an O(log n) binary
-    // search over a read-only array rather than a hash set of hundreds of thousands of entries.
-    // Sorting happens once, at list-generation time, so nothing re-sorts it at startup.
+    // Sorted, packed, 32-byte digests with no delimiters. Sorting happens once, at
+    // list-generation time, so nothing re-sorts it at startup.
     Vector<uint8_t> m_packedDigests WTF_GUARDED_BY_LOCK(m_lock);
 };
 

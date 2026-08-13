@@ -27,8 +27,12 @@
 
 #include <WebCore/CrossOriginStorageLimits.h>
 #include <WebCore/CrossOriginStorageRequestData.h>
+#include <array>
+#include <span>
+#include <wtf/ASCIICType.h>
 #include <wtf/CryptographicallyRandomNumber.h>
 #include <wtf/HashSet.h>
+#include <wtf/StdLibExtras.h>
 #include <wtf/Vector.h>
 #include <wtf/WallTime.h>
 #include <wtf/text/StringBuilder.h>
@@ -88,6 +92,83 @@ inline bool shouldGrease(uint64_t entrySize)
     static constexpr uint32_t resolution = 100000;
     return cryptographicallyRandomNumber<uint32_t>() % resolution < static_cast<uint32_t>(greaseProbability * resolution);
 }
+
+// MARK: - Public Hash List lookup
+
+// The decision half of CrossOriginStoragePublicHashList: given the bytes of a loaded list, does
+// this hash appear on it? Reading the file, caching it, and locking around that cache are the
+// other half and stay in the class.
+namespace PublicHashList {
+
+// The published list only carries SHA-256 digests, so a "*"-scoped entry hashed with any other
+// recognized algorithm can never clear this gate.
+static constexpr size_t digestSize = 32;
+static constexpr ASCIILiteral supportedAlgorithm = "SHA-256"_s;
+
+inline std::optional<std::array<uint8_t, digestSize>> parseHexDigest(const String& hexValue)
+{
+    if (hexValue.length() != digestSize * 2)
+        return std::nullopt;
+
+    std::array<uint8_t, digestSize> digest;
+    for (size_t index = 0; index < digestSize; ++index) {
+        if (!isASCIIHexDigit(hexValue[index * 2]) || !isASCIIHexDigit(hexValue[index * 2 + 1]))
+            return std::nullopt;
+        auto high = toASCIIHexValue(hexValue[index * 2]);
+        auto low = toASCIIHexValue(hexValue[index * 2 + 1]);
+        digest[index] = static_cast<uint8_t>((high << 4) | low);
+    }
+
+    return digest;
+}
+
+// A list whose length is not a whole number of digests is corrupt, and a corrupt list must read as
+// empty rather than as partially usable: a misaligned binary search over it would answer with
+// digests that are not actually on the list, which is the one wrong answer this gate must never
+// give.
+inline bool isWellFormedList(size_t byteLength)
+{
+    return !(byteLength % digestSize);
+}
+
+// Every way this can answer "no" -- wrong algorithm, malformed value, missing or corrupt list, or
+// a genuine absence -- is the same "no". A hash that is not on the list fails closed, and is
+// indistinguishable from one that is simply not there.
+inline bool packedListContains(std::span<const uint8_t> packedDigests, const String& algorithm, const String& hexValue)
+{
+    if (!equalIgnoringASCIICase(algorithm, supportedAlgorithm))
+        return false;
+
+    auto digest = parseHexDigest(hexValue);
+    if (!digest)
+        return false;
+
+    if (!isWellFormedList(packedDigests.size()))
+        return false;
+
+    // Sorted and packed with no delimiters, so this is an O(log n) search over a read-only array
+    // rather than a hash set of hundreds of thousands of entries. Sorting happened once, at
+    // list-generation time.
+    size_t count = packedDigests.size() / digestSize;
+    auto target = std::span<const uint8_t> { *digest };
+    size_t low = 0;
+    size_t high = count;
+    while (low < high) {
+        size_t middle = low + (high - low) / 2;
+        auto candidate = packedDigests.subspan(middle * digestSize, digestSize);
+        auto comparison = compareSpans(candidate, target);
+        if (comparison == std::strong_ordering::equal)
+            return true;
+        if (comparison == std::strong_ordering::less)
+            low = middle + 1;
+        else
+            high = middle;
+    }
+
+    return false;
+}
+
+} // namespace PublicHashList
 
 // MARK: - On-disk metadata record
 

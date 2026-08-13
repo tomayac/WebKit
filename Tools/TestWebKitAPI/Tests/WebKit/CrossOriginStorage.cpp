@@ -24,33 +24,33 @@
  */
 
 #include "config.h"
-#include "CrossOriginStoragePublicHashList.h"
+#include "CrossOriginStoragePolicy.h"
 #include "CrossOriginStorageRateLimiter.h"
 
 #include "Helpers/Test.h"
 #include <WebCore/CrossOriginStorageLimits.h>
-#include <wtf/FileHandle.h>
-#include <wtf/FileSystem.h>
 #include <wtf/Vector.h>
+#include <wtf/text/MakeString.h>
 
 namespace TestWebKitAPI {
 
 using namespace WebCore::CrossOriginStorageLimits;
 
-// Writes a packed Public Hash List containing exactly |digests|, sorted, and points the singleton
-// at it. Returns the file to clean up.
-static String writePublicHashList(const Vector<String>& hexDigests)
+using namespace WebKit::CrossOriginStoragePolicy::PublicHashList;
+
+// Packs |hexDigests| the way the generator does: sorted, fixed width, no delimiters. A fixture
+// that skipped the sort would be testing a list no generator would ever produce, and the binary
+// search would answer about it incorrectly for reasons that say nothing about the code.
+static Vector<uint8_t> packList(const Vector<String>& hexDigests)
 {
     Vector<Vector<uint8_t>> packed;
     for (auto& hex : hexDigests) {
         Vector<uint8_t> digest;
-        for (unsigned index = 0; index < 32; ++index)
+        for (unsigned index = 0; index < digestSize; ++index)
             digest.append(static_cast<uint8_t>((toASCIIHexValue(hex[index * 2]) << 4) | toASCIIHexValue(hex[index * 2 + 1])));
         packed.append(WTF::move(digest));
     }
 
-    // The lookup is a binary search, so the shipped file is sorted at generation time. A test
-    // fixture that skipped this would be testing a file no generator would ever produce.
     std::sort(packed.begin(), packed.end(), [](auto& a, auto& b) {
         return compareSpans(a.span(), b.span()) == std::strong_ordering::less;
     });
@@ -58,93 +58,66 @@ static String writePublicHashList(const Vector<String>& hexDigests)
     Vector<uint8_t> contents;
     for (auto& digest : packed)
         contents.appendVector(digest);
-
-    auto path = FileSystem::createTemporaryFile("CrossOriginStorageTest"_s);
-    {
-        auto file = FileSystem::openFile(path, FileSystem::FileOpenMode::Truncate);
-        file.write(contents.span());
-    }
-
-    WebKit::CrossOriginStoragePublicHashList::singleton().setDataPathForTesting(path);
-    return path;
+    return contents;
 }
 
-class CrossOriginStoragePublicHashListTest : public testing::Test {
-public:
-    void TearDown() final
-    {
-        WebKit::CrossOriginStoragePublicHashList::singleton().clearForTesting();
-        if (!m_listPath.isEmpty())
-            FileSystem::deleteFile(m_listPath);
-    }
+static constexpr auto listedDigest = "6d567d7c2f46febcdeaf874614d63e3192ff3a844ee34f8bb63f4c5cf259f233"_s;
 
-protected:
-    String m_listPath;
-};
-
-TEST_F(CrossOriginStoragePublicHashListTest, FindsListedDigestAndRejectsUnlistedOne)
+TEST(CrossOriginStoragePublicHashList, FindsListedDigestAndRejectsUnlistedOne)
 {
-    auto listed = "6d567d7c2f46febcdeaf874614d63e3192ff3a844ee34f8bb63f4c5cf259f233"_s;
     auto alsoListed = "0000000000000000000000000000000000000000000000000000000000000001"_s;
-    m_listPath = writePublicHashList({ listed, alsoListed });
+    auto list = packList({ listedDigest, alsoListed });
 
-    auto& list = WebKit::CrossOriginStoragePublicHashList::singleton();
-    EXPECT_EQ(list.sizeForTesting(), 2u);
-    EXPECT_TRUE(list.contains("SHA-256"_s, listed));
-    EXPECT_TRUE(list.contains("SHA-256"_s, alsoListed));
+    EXPECT_TRUE(packedListContains(list.span(), "SHA-256"_s, listedDigest));
+    EXPECT_TRUE(packedListContains(list.span(), "SHA-256"_s, alsoListed));
 
     // A hash that is not on the list must fail closed, indistinguishably from a genuine miss.
-    EXPECT_FALSE(list.contains("SHA-256"_s, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"_s));
+    EXPECT_FALSE(packedListContains(list.span(), "SHA-256"_s, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"_s));
 }
 
-TEST_F(CrossOriginStoragePublicHashListTest, MatchesAlgorithmNameCaseInsensitively)
+TEST(CrossOriginStoragePublicHashList, MatchesAlgorithmNameCaseInsensitively)
 {
-    auto listed = "6d567d7c2f46febcdeaf874614d63e3192ff3a844ee34f8bb63f4c5cf259f233"_s;
-    m_listPath = writePublicHashList({ listed });
-
-    auto& list = WebKit::CrossOriginStoragePublicHashList::singleton();
-    EXPECT_TRUE(list.contains("sha-256"_s, listed));
+    auto list = packList({ listedDigest });
+    EXPECT_TRUE(packedListContains(list.span(), "sha-256"_s, listedDigest));
 }
 
-TEST_F(CrossOriginStoragePublicHashListTest, RejectsEveryAlgorithmOtherThanSHA256)
+TEST(CrossOriginStoragePublicHashList, RejectsEveryAlgorithmOtherThanSHA256)
 {
     // The published list only carries SHA-256 digests, so a wildcard-scoped entry hashed with any
     // other recognized algorithm can never clear this gate, whatever its value happens to be.
-    auto listed = "6d567d7c2f46febcdeaf874614d63e3192ff3a844ee34f8bb63f4c5cf259f233"_s;
-    m_listPath = writePublicHashList({ listed });
-
-    auto& list = WebKit::CrossOriginStoragePublicHashList::singleton();
-    EXPECT_FALSE(list.contains("SHA-1"_s, listed));
-    EXPECT_FALSE(list.contains("SHA-384"_s, listed));
-    EXPECT_FALSE(list.contains("SHA-512"_s, listed));
+    auto list = packList({ listedDigest });
+    EXPECT_FALSE(packedListContains(list.span(), "SHA-1"_s, listedDigest));
+    EXPECT_FALSE(packedListContains(list.span(), "SHA-384"_s, listedDigest));
+    EXPECT_FALSE(packedListContains(list.span(), "SHA-512"_s, listedDigest));
 }
 
-TEST_F(CrossOriginStoragePublicHashListTest, FailsClosedWhenTheListCannotBeRead)
+TEST(CrossOriginStoragePublicHashList, FailsClosedOnAnEmptyList)
 {
-    // A missing file must behave exactly like a genuinely empty list, never like "everything is on
-    // the list". This is the direction a load failure has to fail in.
-    WebKit::CrossOriginStoragePublicHashList::singleton().setDataPathForTesting("/definitely/not/a/real/path/list.dat"_s);
-
-    auto& list = WebKit::CrossOriginStoragePublicHashList::singleton();
-    EXPECT_EQ(list.sizeForTesting(), 0u);
-    EXPECT_FALSE(list.contains("SHA-256"_s, "6d567d7c2f46febcdeaf874614d63e3192ff3a844ee34f8bb63f4c5cf259f233"_s));
+    // What a missing or unreadable file degrades to. It must behave exactly like a genuinely empty
+    // list, never like "everything is on the list": that is the direction a load failure has to
+    // fail in, and the only direction that keeps a "*" entry from being disclosed on a bad read.
+    EXPECT_FALSE(packedListContains({ }, "SHA-256"_s, listedDigest));
 }
 
-TEST_F(CrossOriginStoragePublicHashListTest, FailsClosedOnATruncatedList)
+TEST(CrossOriginStoragePublicHashList, FailsClosedOnATruncatedList)
 {
-    // A file whose length is not a whole number of digests is corrupt. Loading it partially would
-    // shift every subsequent digest and make lookups answer about the wrong content.
-    m_listPath = FileSystem::createTemporaryFile("CrossOriginStorageTest"_s);
-    {
-        auto file = FileSystem::openFile(m_listPath, FileSystem::FileOpenMode::Truncate);
-        // One byte short of a whole digest.
-        Vector<uint8_t> partial(31);
-        file.write(partial.span());
-    }
+    // A list whose length is not a whole number of digests is corrupt. Searching it anyway would
+    // misalign every comparison and answer about content that is not on the list at all.
+    auto list = packList({ listedDigest });
+    EXPECT_TRUE(packedListContains(list.span(), "SHA-256"_s, listedDigest));
 
-    auto& list = WebKit::CrossOriginStoragePublicHashList::singleton();
-    list.setDataPathForTesting(m_listPath);
-    EXPECT_EQ(list.sizeForTesting(), 0u);
+    list.removeLast();
+    EXPECT_FALSE(isWellFormedList(list.size()));
+    EXPECT_FALSE(packedListContains(list.span(), "SHA-256"_s, listedDigest));
+}
+
+TEST(CrossOriginStoragePublicHashList, RejectsAMalformedHashValue)
+{
+    auto list = packList({ listedDigest });
+    // Too short, too long, and the right length but not hexadecimal.
+    EXPECT_FALSE(packedListContains(list.span(), "SHA-256"_s, String { listedDigest }.left(63)));
+    EXPECT_FALSE(packedListContains(list.span(), "SHA-256"_s, makeString(listedDigest, "0"_s)));
+    EXPECT_FALSE(packedListContains(list.span(), "SHA-256"_s, "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"_s));
 }
 
 TEST(CrossOriginStorageRateLimiter, DeniesAfterTheBurstIsExhausted)

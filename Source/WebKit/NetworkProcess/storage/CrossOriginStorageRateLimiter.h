@@ -25,7 +25,7 @@
 
 #pragma once
 
-#include <wtf/ExportMacros.h>
+#include <WebCore/CrossOriginStorageLimits.h>
 #include <wtf/HashMap.h>
 #include <wtf/MonotonicTime.h>
 #include <wtf/text/WTFString.h>
@@ -43,6 +43,10 @@ namespace WebKit {
 //
 // Denial is never itself observable: a caller over budget gets exactly the response a genuine
 // miss would produce, so that the limiter cannot be turned into its own side channel.
+//
+// Defined inline rather than in a .cpp because it is small, has no dependencies beyond its own
+// limits, and is unit-tested: WebKit.framework hides its C++ symbols, so an out-of-line
+// tryConsume() would have to be exported purely so a test could link against it.
 class CrossOriginStorageRateLimiter {
 public:
     CrossOriginStorageRateLimiter() = default;
@@ -50,7 +54,7 @@ public:
     enum class ProbeType : bool { Read, Write };
 
     // Returns false when the origin is over budget.
-    WTF_EXPORT_DECLARATION bool tryConsume(const String& origin, ProbeType);
+    bool tryConsume(const String& origin, ProbeType);
 
     void clear();
 
@@ -71,5 +75,62 @@ private:
     BucketMap m_readBuckets;
     BucketMap m_writeBuckets;
 };
+
+inline void CrossOriginStorageRateLimiter::evictLeastRecentlyUsedIfNeeded(BucketMap& buckets)
+{
+    if (buckets.size() < WebCore::CrossOriginStorageLimits::rateLimiterOriginCap)
+        return;
+
+    String leastRecentlyUsed;
+    auto oldestRefill = MonotonicTime::infinity();
+    for (auto& entry : buckets) {
+        if (entry.value.lastRefill < oldestRefill) {
+            oldestRefill = entry.value.lastRefill;
+            leastRecentlyUsed = entry.key;
+        }
+    }
+
+    if (!leastRecentlyUsed.isNull())
+        buckets.remove(leastRecentlyUsed);
+}
+
+inline bool CrossOriginStorageRateLimiter::tryConsume(BucketMap& buckets, const String& origin, double capacity, double refillPerSecond)
+{
+    auto now = MonotonicTime::now();
+    auto iterator = buckets.find(origin);
+    if (iterator == buckets.end()) {
+        evictLeastRecentlyUsedIfNeeded(buckets);
+        buckets.add(origin, Bucket { capacity - 1, now });
+        return true;
+    }
+
+    auto& bucket = iterator->value;
+    auto elapsed = (now - bucket.lastRefill).seconds();
+    if (elapsed > 0)
+        bucket.tokens = std::min(capacity, bucket.tokens + elapsed * refillPerSecond);
+    // Update on every attempt, allowed or denied, so the timestamp stays a true recency signal.
+    bucket.lastRefill = now;
+
+    if (bucket.tokens < 1)
+        return false;
+
+    bucket.tokens -= 1;
+    return true;
+}
+
+inline bool CrossOriginStorageRateLimiter::tryConsume(const String& origin, ProbeType type)
+{
+    using namespace WebCore::CrossOriginStorageLimits;
+    if (type == ProbeType::Read)
+        return tryConsume(m_readBuckets, origin, readProbeBurstCapacity, readProbeRefillPerSecond);
+
+    return tryConsume(m_writeBuckets, origin, writeProbeBurstCapacity, writeProbeRefillPerSecond);
+}
+
+inline void CrossOriginStorageRateLimiter::clear()
+{
+    m_readBuckets.clear();
+    m_writeBuckets.clear();
+}
 
 } // namespace WebKit

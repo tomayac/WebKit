@@ -204,7 +204,13 @@ jobs:
           # transaction, so refresh it here first.
           sudo apt-get update
           sudo Tools/gtk/install-dependencies
-          sudo apt-get install -y ninja-build
+          # xdg-dbus-proxy is the third GTK default whose tool the dependency
+          # list omits, but unlike Thunder and libbacktrace it is switched on
+          # for a reason worth keeping: ENABLE_BUBBLEWRAP_SANDBOX is what
+          # confines the web processes. Turning that off would be the easy fix
+          # and the wrong one, in a binary whose entire purpose is that people
+          # browse the real web with it.
+          sudo apt-get install -y ninja-build xdg-dbus-proxy
 
       - name: Build
         env:

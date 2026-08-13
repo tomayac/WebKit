@@ -26,6 +26,8 @@
 #include "config.h"
 #include "CrossOriginStoragePublicHashList.h"
 
+#include "CrossOriginStoragePolicy.h"
+
 #include <cstdlib>
 #include <wtf/ASCIICType.h>
 #include <wtf/FileSystem.h>
@@ -39,9 +41,6 @@
 
 namespace WebKit {
 
-// The published Public Hash List only carries SHA-256 digests.
-static constexpr size_t digestSize = 32;
-static constexpr ASCIILiteral supportedAlgorithm = "SHA-256"_s;
 static constexpr ASCIILiteral dataFileName = "CrossOriginStoragePublicHashList.dat"_s;
 
 CrossOriginStoragePublicHashList& CrossOriginStoragePublicHashList::singleton()
@@ -85,7 +84,7 @@ void CrossOriginStoragePublicHashList::loadIfNeeded()
     // list empty rather than in any state that could read as "everything is on the list".
     m_loaded = true;
 
-    auto path = m_dataPathOverride.isEmpty() ? defaultDataPath() : m_dataPathOverride;
+    auto path = defaultDataPath();
     if (path.isEmpty())
         return;
 
@@ -95,85 +94,17 @@ void CrossOriginStoragePublicHashList::loadIfNeeded()
 
     // A file whose length is not a whole number of digests is corrupt; fail safe to empty rather
     // than to a partially-parsed list.
-    if (contents->size() % digestSize)
+    if (!CrossOriginStoragePolicy::PublicHashList::isWellFormedList(contents->size()))
         return;
 
     m_packedDigests = WTF::move(*contents);
 }
 
-static std::optional<std::array<uint8_t, digestSize>> parseHexDigest(const String& hexValue)
-{
-    if (hexValue.length() != digestSize * 2)
-        return std::nullopt;
-
-    std::array<uint8_t, digestSize> digest;
-    for (size_t index = 0; index < digestSize; ++index) {
-        auto high = toASCIIHexValue(hexValue[index * 2]);
-        auto low = toASCIIHexValue(hexValue[index * 2 + 1]);
-        if (!isASCIIHexDigit(hexValue[index * 2]) || !isASCIIHexDigit(hexValue[index * 2 + 1]))
-            return std::nullopt;
-        digest[index] = static_cast<uint8_t>((high << 4) | low);
-    }
-
-    return digest;
-}
-
 bool CrossOriginStoragePublicHashList::contains(const String& algorithm, const String& hexValue)
 {
-    if (!equalIgnoringASCIICase(algorithm, supportedAlgorithm))
-        return false;
-
-    auto digest = parseHexDigest(hexValue);
-    if (!digest)
-        return false;
-
     Locker locker { m_lock };
     loadIfNeeded();
-
-    size_t count = m_packedDigests.size() / digestSize;
-    if (!count)
-        return false;
-
-    auto data = m_packedDigests.span();
-    auto target = std::span<const uint8_t> { *digest };
-    size_t low = 0;
-    size_t high = count;
-    while (low < high) {
-        size_t middle = low + (high - low) / 2;
-        auto candidate = data.subspan(middle * digestSize, digestSize);
-        auto comparison = compareSpans(candidate, target);
-        if (comparison == std::strong_ordering::equal)
-            return true;
-        if (comparison == std::strong_ordering::less)
-            low = middle + 1;
-        else
-            high = middle;
-    }
-
-    return false;
-}
-
-void CrossOriginStoragePublicHashList::setDataPathForTesting(const String& path)
-{
-    Locker locker { m_lock };
-    m_dataPathOverride = path;
-    m_loaded = false;
-    m_packedDigests.clear();
-}
-
-void CrossOriginStoragePublicHashList::clearForTesting()
-{
-    Locker locker { m_lock };
-    m_dataPathOverride = { };
-    m_loaded = false;
-    m_packedDigests.clear();
-}
-
-size_t CrossOriginStoragePublicHashList::sizeForTesting()
-{
-    Locker locker { m_lock };
-    loadIfNeeded();
-    return m_packedDigests.size() / digestSize;
+    return CrossOriginStoragePolicy::PublicHashList::packedListContains(m_packedDigests.span(), algorithm, hexValue);
 }
 
 } // namespace WebKit
