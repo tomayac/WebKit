@@ -216,7 +216,13 @@ jobs:
           if [ "${{ matrix.port }}" = "mac" ]; then
             Tools/Scripts/build-webkit --release
           else
-            Tools/Scripts/build-webkit --gtk --release
+            # build-webkit turns on ENABLE_EXPERIMENTAL_FEATURES for the GTK
+            # port, which makes ENABLE_THUNDER a hard requirement -- and Thunder
+            # (the OCDM backend for encrypted media) is not packaged on Ubuntu,
+            # so find_package(Thunder REQUIRED) aborts configuration. Nothing
+            # about Cross-Origin Storage needs it: the feature is gated on its
+            # own WebPreferences flag, not on experimental features.
+            Tools/Scripts/build-webkit --gtk --release --cmakeargs="-DENABLE_THUNDER=OFF"
           fi
 
       - name: Package (macOS)
