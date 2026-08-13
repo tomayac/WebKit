@@ -204,7 +204,12 @@ jobs:
           # transaction, so refresh it here first.
           sudo apt-get update
           sudo Tools/gtk/install-dependencies
-          sudo apt-get install -y ninja-build
+          # libbacktrace is not in Tools/glib/dependencies/apt even though
+          # USE_LIBBACKTRACE defaults to ON and is a hard requirement when set,
+          # so a stock apt install cannot configure. Installing it rather than
+          # switching the option off keeps usable crash backtraces in a binary
+          # whose whole purpose is hand-testing.
+          sudo apt-get install -y ninja-build libbacktrace-dev
 
       - name: Build
         env:
