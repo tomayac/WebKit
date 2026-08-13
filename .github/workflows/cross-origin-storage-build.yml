@@ -220,7 +220,17 @@ jobs:
         run: |
           set -eux
           if [ "${{ matrix.port }}" = "mac" ]; then
-            Tools/Scripts/build-webkit --release
+            # Build only what gets packaged. build-webkit defaults to the
+            # "Everything up to WebKit + Tools" scheme, which also builds
+            # TestWebKitAPI, WebKitTestRunner, DumpRenderTree, SwiftBrowser and
+            # lldbWebKitTester -- none of which is copied into the release, and
+            # which together were the difference between the x86_64 leg fitting
+            # in a runner's six-hour ceiling and being cancelled at exactly
+            # 6h00m. They also made a test-only link error fail a release build,
+            # which is backwards. This scheme stops at MiniBrowser.app and the
+            # frameworks it needs, which is precisely what Package (macOS)
+            # collects.
+            Tools/Scripts/build-webkit --release --only="Everything up to MiniBrowser"
           else
             # build-webkit turns on ENABLE_EXPERIMENTAL_FEATURES for the GTK
             # port, which makes ENABLE_THUNDER a hard requirement -- and Thunder
