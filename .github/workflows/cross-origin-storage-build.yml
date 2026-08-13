@@ -204,12 +204,7 @@ jobs:
           # transaction, so refresh it here first.
           sudo apt-get update
           sudo Tools/gtk/install-dependencies
-          # libbacktrace is not in Tools/glib/dependencies/apt even though
-          # USE_LIBBACKTRACE defaults to ON and is a hard requirement when set,
-          # so a stock apt install cannot configure. Installing it rather than
-          # switching the option off keeps usable crash backtraces in a binary
-          # whose whole purpose is hand-testing.
-          sudo apt-get install -y ninja-build libbacktrace-dev
+          sudo apt-get install -y ninja-build
 
       - name: Build
         env:
@@ -227,7 +222,16 @@ jobs:
             # so find_package(Thunder REQUIRED) aborts configuration. Nothing
             # about Cross-Origin Storage needs it: the feature is gated on its
             # own WebPreferences flag, not on experimental features.
-            Tools/Scripts/build-webkit --gtk --release --cmakeargs="-DENABLE_THUNDER=OFF"
+            # Two GTK options default ON but need libraries that
+            # Tools/glib/dependencies/apt never installs, and both are hard
+            # requirements when set, so configuration aborts on each in turn.
+            # Thunder is the OCDM backend for encrypted media; libbacktrace is a
+            # crash-reporting aid that Ubuntu does not package at all (there is
+            # no libbacktrace-dev to install). Neither has anything to do with
+            # Cross-Origin Storage, which is gated on its own WebPreferences
+            # flag rather than on experimental features.
+            Tools/Scripts/build-webkit --gtk --release \
+              --cmakeargs="-DENABLE_THUNDER=OFF -DUSE_LIBBACKTRACE=OFF"
           fi
 
       - name: Package (macOS)
