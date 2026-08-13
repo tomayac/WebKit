@@ -26,6 +26,7 @@
 #include "config.h"
 #include "CrossOriginStorageRegistry.h"
 
+#include "CrossOriginStoragePolicy.h"
 #include "CrossOriginStoragePublicHashList.h"
 #include "FileSystemStorageHandle.h"
 #include "FileSystemStorageHandleRegistry.h"
@@ -36,7 +37,6 @@
 #include <WebCore/RegistrableDomain.h>
 #include <pal/crypto/CryptoDigest.h>
 #include <wtf/CheckedArithmetic.h>
-#include <wtf/CryptographicallyRandomNumber.h>
 #include <wtf/FileSystem.h>
 #include <wtf/Function.h>
 #include <wtf/HashSet.h>
@@ -44,7 +44,6 @@
 #include <wtf/TZoneMallocInlines.h>
 #include <wtf/URL.h>
 #include <wtf/text/MakeString.h>
-#include <wtf/text/StringBuilder.h>
 #include <wtf/text/StringToIntegerConversion.h>
 #include <wtf/text/StringView.h>
 
@@ -55,7 +54,6 @@ using namespace WebCore::CrossOriginStorageLimits;
 WTF_MAKE_TZONE_ALLOCATED_IMPL(CrossOriginStorageRegistry);
 
 static constexpr size_t hashReadChunkSize = 1 * MB;
-static constexpr unsigned metadataFormatVersion = 1;
 static constexpr ASCIILiteral bytesDirectoryName = "files"_s;
 static constexpr ASCIILiteral metadataDirectoryName = "metadata"_s;
 static constexpr ASCIILiteral metadataFileExtension = ".meta"_s;
@@ -336,18 +334,7 @@ bool CrossOriginStorageRegistry::shouldGrease(const Entry& entry)
 
 bool CrossOriginStorageRegistry::shouldGrease(uint64_t entrySize)
 {
-    // Never GREASE an entry large enough that a spurious re-download would be clearly
-    // disproportionate to the privacy benefit: on a small file a false negative costs a cheap
-    // re-fetch, but on gigabyte-scale weights it would impose a real, observable bandwidth cost —
-    // and that cost difference is itself observable, which would defeat the purpose.
-    if (entrySize >= greaseSizeCeiling)
-        return false;
-
-    // A predictable roll is not a roll at all: if an adversary can anticipate which requests get
-    // GREASEd, the "found" signal becomes reliable again through the predictable gaps. This uses
-    // the cryptographic RNG rather than whichever generator is fastest.
-    static constexpr uint32_t resolution = 100000;
-    return cryptographicallyRandomNumber<uint32_t>() % resolution < static_cast<uint32_t>(greaseProbability * resolution);
+    return CrossOriginStoragePolicy::shouldGrease(entrySize);
 }
 
 // https://wicg.github.io/cross-origin-storage/#apply-availability-gating
@@ -659,15 +646,12 @@ uint64_t CrossOriginStorageRegistry::globalBudget() const
     if (!capacity)
         return 0;
 
-    auto budget = static_cast<uint64_t>(*capacity * globalBudgetDiskCapacityRatio);
-    // Independent of the percentage math, as a defense against a platform API that misreports
-    // capacity: a pure percentage would silently inherit such an error instead of failing safe.
-    return std::min(budget, globalBudgetCeiling);
+    return CrossOriginStoragePolicy::globalBudgetForVolumeCapacity(*capacity);
 }
 
 uint64_t CrossOriginStorageRegistry::perOriginBudget() const
 {
-    return static_cast<uint64_t>(globalBudget() * perOriginBudgetRatio);
+    return CrossOriginStoragePolicy::perOriginBudgetForGlobalBudget(globalBudget());
 }
 
 void CrossOriginStorageRegistry::chargeUsage(const String& origin, uint64_t size)
@@ -694,62 +678,34 @@ void CrossOriginStorageRegistry::dischargeUsage(const String& origin, uint64_t s
 
 bool CrossOriginStorageRegistry::makeRoomForWrite(const String& writingOrigin, uint64_t size)
 {
-    auto global = globalBudget();
-    if (!global || size > global)
-        return false;
-
-    auto perOrigin = perOriginBudget();
-    if (size > perOrigin)
-        return false;
-
-    auto evictionCandidates = [&](NOESCAPE const Function<bool(const Entry&)>& predicate) {
-        Vector<std::pair<WallTime, String>> candidates;
-        for (auto& keyValue : m_entries) {
-            auto& entry = keyValue.value;
-            if (entry.state != Entry::State::Written || entry.pendingWriterCount)
-                continue;
-            if (!predicate(entry))
-                continue;
-            candidates.append({ entry.lastReadTime, keyValue.key });
-        }
-        std::sort(candidates.begin(), candidates.end(), [](auto& a, auto& b) {
-            return a.first != b.first ? a.first < b.first : codePointCompareLessThan(a.second, b.second);
+    // Only entries that are safe to evict at all are offered to the planner: a pending entry, or
+    // one with a writer still outstanding, is somebody's in-flight write.
+    Vector<CrossOriginStoragePolicy::EvictionCandidate> candidates;
+    candidates.reserveInitialCapacity(m_entries.size());
+    for (auto& keyValue : m_entries) {
+        auto& entry = keyValue.value;
+        if (entry.state != Entry::State::Written || entry.pendingWriterCount)
+            continue;
+        candidates.append({
+            keyValue.key,
+            entry.lastReadTime,
+            entry.size,
+            entry.attributedOrigin,
+            entry.storingOrigins.size() == 1 ? entry.storingOrigins.first() : String { },
         });
-        return candidates;
-    };
-
-    // Pass one: an origin that has hit its own share may only ever reclaim its *own* sole-owned
-    // entries. Never a shared entry, even one it co-owns, and never another origin's, so that one
-    // origin writing a lot cannot force eviction of a different origin's data by being more
-    // recent.
-    auto originUsage = m_bytesByOrigin.get(writingOrigin);
-    if (originUsage + size > perOrigin) {
-        for (auto& candidate : evictionCandidates([&](const Entry& entry) {
-            return entry.storingOrigins.size() == 1 && entry.storingOrigins.first() == writingOrigin;
-        })) {
-            if (m_bytesByOrigin.get(writingOrigin) + size <= perOrigin)
-                break;
-            removeEntry(candidate.second);
-        }
-
-        if (m_bytesByOrigin.get(writingOrigin) + size > perOrigin)
-            return false;
     }
 
-    // Pass two: only once several different origins, each individually within their own share,
-    // collectively exceed the global cap does eviction fall back to plain cross-origin LRU. That
-    // is fair here, because it reflects genuine multi-tenant demand rather than one origin
-    // crowding out another.
-    if (m_totalBytes + size > global) {
-        for (auto& candidate : evictionCandidates([](const Entry&) { return true; })) {
-            if (m_totalBytes + size <= global)
-                break;
-            removeEntry(candidate.second);
-        }
+    auto plan = CrossOriginStoragePolicy::planEviction(WTF::move(candidates), writingOrigin, size, {
+        m_totalBytes,
+        m_bytesByOrigin.get(writingOrigin),
+        globalBudget(),
+        perOriginBudget(),
+    });
+    if (!plan.fits)
+        return false;
 
-        if (m_totalBytes + size > global)
-            return false;
-    }
+    for (auto& key : plan.keysToEvict)
+        removeEntry(key);
 
     // The nominal budget above can still allow a write that genuinely will not fit right now.
     // This is an internal-only safety net: the real free-space figure is never surfaced, so that
@@ -774,22 +730,17 @@ bool CrossOriginStorageRegistry::persistEntry(const Entry& entry)
     if (!FileSystem::makeAllDirectories(FileSystem::parentPath(path)))
         return false;
 
-    StringBuilder builder;
-    builder.append(metadataFormatVersion, '\n');
-    builder.append(entry.algorithm, '\n');
-    builder.append(entry.value, '\n');
-    builder.append(entry.size, '\n');
-    builder.append(static_cast<uint64_t>(entry.lastReadTime.secondsSinceEpoch().milliseconds()), '\n');
-    builder.append(static_cast<unsigned>(entry.originsScope), '\n');
-    builder.append(entry.attributedOrigin, '\n');
-    builder.append(entry.origins.size(), '\n');
-    for (auto& origin : entry.origins)
-        builder.append(origin, '\n');
-    builder.append(entry.storingOrigins.size(), '\n');
-    for (auto& origin : entry.storingOrigins)
-        builder.append(origin, '\n');
+    CrossOriginStoragePolicy::EntryRecord record;
+    record.algorithm = entry.algorithm;
+    record.value = entry.value;
+    record.size = entry.size;
+    record.lastReadTime = entry.lastReadTime;
+    record.originsScope = entry.originsScope;
+    record.attributedOrigin = entry.attributedOrigin;
+    record.origins = entry.origins;
+    record.storingOrigins = entry.storingOrigins;
 
-    auto contents = builder.toString().utf8();
+    auto contents = record.serialize().utf8();
 
     // Write to a sibling temporary file and rename it into place, so that a reader can never
     // observe a half-written file. The temporary name is deliberately predictable from the final
@@ -846,45 +797,23 @@ void CrossOriginStorageRegistry::loadEntriesFromDisk()
                 continue;
             }
 
-            // Empty entries must be preserved: this is a positional format, and an entry whose
-            // attributed origin is empty would otherwise shift every field after it by one line.
-            auto lines = String::fromUTF8(contents->span()).splitAllowingEmptyEntries('\n');
-            auto readLine = [&](size_t index) -> String {
-                return index < lines.size() ? lines[index] : String { };
-            };
-
-            if (parseInteger<unsigned>(readLine(0)).value_or(0) != metadataFormatVersion) {
+            auto record = CrossOriginStoragePolicy::EntryRecord::parse(String::fromUTF8(contents->span()));
+            if (!record) {
                 FileSystem::deleteFile(filePath);
                 continue;
             }
 
             Entry entry;
-            entry.algorithm = readLine(1);
-            entry.value = readLine(2);
+            entry.algorithm = record->algorithm;
+            entry.value = record->value;
             entry.state = Entry::State::Written;
-            entry.size = parseInteger<uint64_t>(readLine(3)).value_or(0);
-            entry.lastReadTime = WallTime::fromRawSeconds(parseInteger<uint64_t>(readLine(4)).value_or(0) / 1000.0);
+            entry.size = record->size;
+            entry.lastReadTime = record->lastReadTime;
             entry.createdTime = entry.lastReadTime;
-            auto scope = parseInteger<unsigned>(readLine(5)).value_or(0);
-            if (scope > static_cast<unsigned>(WebCore::CrossOriginStorageOriginsScope::Wildcard)) {
-                FileSystem::deleteFile(filePath);
-                continue;
-            }
-            entry.originsScope = static_cast<WebCore::CrossOriginStorageOriginsScope>(scope);
-            entry.attributedOrigin = readLine(6);
-
-            size_t cursor = 7;
-            auto readOriginList = [&](Vector<String>& target) {
-                auto count = parseInteger<size_t>(readLine(cursor++)).value_or(0);
-                count = std::min(count, maximumOriginsListLength);
-                for (size_t index = 0; index < count; ++index) {
-                    auto origin = readLine(cursor++);
-                    if (!origin.isEmpty())
-                        target.append(origin);
-                }
-            };
-            readOriginList(entry.origins);
-            readOriginList(entry.storingOrigins);
+            entry.originsScope = record->originsScope;
+            entry.attributedOrigin = record->attributedOrigin;
+            entry.origins = WTF::move(record->origins);
+            entry.storingOrigins = WTF::move(record->storingOrigins);
 
             // A missing or truncated bytes file for otherwise-valid metadata degrades to absent
             // rather than to a handle that would hand out content not matching its own hash.
@@ -959,55 +888,6 @@ void CrossOriginStorageRegistry::deleteDataForRegistrableDomains(const HashSet<W
             return false;
         return domains.contains(WebCore::RegistrableDomain::uncheckedCreateFromHost(url.host().toString()));
     });
-}
-
-
-void CrossOriginStorageRegistry::addWrittenEntryForTesting(const String& algorithm, const String& value, const String& storingOrigin, uint64_t size, WebCore::CrossOriginStorageOriginsScope originsScope, const Vector<String>& origins, WallTime lastReadTime)
-{
-    Entry entry;
-    entry.algorithm = algorithm;
-    entry.value = value;
-    entry.state = Entry::State::Written;
-    entry.originsScope = originsScope;
-    entry.origins = origins;
-    entry.size = size;
-    entry.lastReadTime = lastReadTime;
-    entry.createdTime = lastReadTime;
-    entry.attributedOrigin = storingOrigin;
-    if (!storingOrigin.isEmpty())
-        entry.storingOrigins.append(storingOrigin);
-
-    // Written on disk as well as in memory: loadEntriesFromDisk() discards an
-    // entry whose bytes file is missing or the wrong length, so an in-memory
-    // only fixture would make every persistence assertion vacuously pass.
-    auto path = bytesPath(entry);
-    FileSystem::makeAllDirectories(FileSystem::parentPath(path));
-    {
-        auto file = FileSystem::openFile(path, FileSystem::FileOpenMode::Truncate);
-        Vector<uint8_t> bytes(size);
-        file.write(bytes.span());
-    }
-
-    chargeUsage(entry.attributedOrigin, entry.size);
-    auto key = entryKey(algorithm, value);
-    persistEntry(entry);
-    m_entries.set(key, WTF::move(entry));
-}
-
-bool CrossOriginStorageRegistry::containsWrittenEntryForTesting(const String& algorithm, const String& value)
-{
-    auto* entry = findLiveEntry(entryKey(algorithm, value));
-    return entry && entry->state == Entry::State::Written;
-}
-
-bool CrossOriginStorageRegistry::makeRoomForWriteForTesting(const String& writingOrigin, uint64_t size)
-{
-    return makeRoomForWrite(writingOrigin, size);
-}
-
-bool CrossOriginStorageRegistry::shouldGreaseForTesting(uint64_t entrySize)
-{
-    return shouldGrease(entrySize);
 }
 
 } // namespace WebKit

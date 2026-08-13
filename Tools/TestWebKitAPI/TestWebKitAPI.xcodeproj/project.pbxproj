@@ -830,7 +830,7 @@
 				WebCore/XRCompositionLayer.cpp,
 				WebCore/YouTubePluginReplacement.cpp,
 				WebKit/CrossOriginStorage.cpp,
-				WebKit/CrossOriginStorageRegistry.cpp,
+				WebKit/CrossOriginStoragePolicy.cpp,
 				WebKit/DeviceIdHashSaltStorage.cpp,
 				WebKit/WKPage/AboutBlankLoad.cpp,
 				WebKit/WKPage/CanHandleRequest.cpp,

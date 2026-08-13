@@ -101,19 +101,15 @@ public:
     void deleteDataForRegistrableDomains(const HashSet<WebCore::RegistrableDomain>&);
     uint64_t totalBytes() const { return m_totalBytes; }
 
-    // Testing surface. The behaviours below are reachable from script only
-    // indirectly and only nondeterministically -- eviction depends on a budget
-    // derived from disk capacity, persistence needs a process restart to
-    // observe, and GREASE'ing is deliberately unobservable by design -- so they
-    // are driven here directly instead, which is also where their failure modes
-    // are legible.
-    WTF_EXPORT_DECLARATION void addWrittenEntryForTesting(const String& algorithm, const String& value, const String& storingOrigin, uint64_t size, WebCore::CrossOriginStorageOriginsScope, const Vector<String>& origins, WallTime lastReadTime);
-    WTF_EXPORT_DECLARATION bool containsWrittenEntryForTesting(const String& algorithm, const String& value);
-    WTF_EXPORT_DECLARATION size_t entryCountForTesting() const { return m_entries.size(); }
-    WTF_EXPORT_DECLARATION uint64_t bytesForOriginForTesting(const String& origin) const { return m_bytesByOrigin.get(origin); }
-    WTF_EXPORT_DECLARATION bool makeRoomForWriteForTesting(const String& writingOrigin, uint64_t size);
-    WTF_EXPORT_DECLARATION uint64_t globalBudgetForTesting() const { return globalBudget(); }
-    WTF_EXPORT_DECLARATION static bool shouldGreaseForTesting(uint64_t entrySize);
+    // There is deliberately no testing surface here. WebKit.framework hides its C++ symbols, so
+    // reaching a live registry from TestWebKitAPI would mean exporting this class's constructor,
+    // destructor and factory -- plus FileSystemStorageHandleRegistry::create() -- purely for a
+    // test, which nothing else in the tree does.
+    //
+    // Instead the behaviours worth testing directly -- the on-disk record format, eviction order,
+    // GREASE'ing, and the budget arithmetic -- live in CrossOriginStoragePolicy.h as pure
+    // functions over plain values, and are tested there without linking anything. What remains
+    // here is the part that genuinely needs a live process, which WPT covers end to end.
 
 private:
     CrossOriginStorageRegistry(String&& path, FileSystemStorageHandleRegistry&, std::optional<uint64_t> volumeCapacityOverride);
