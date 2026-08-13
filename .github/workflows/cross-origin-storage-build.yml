@@ -193,6 +193,12 @@ jobs:
           # than just skipping itself. Dropping the line is narrower than
           # downgrading the runner's git, and nothing here compiles with it.
           sudo sed -i '/^[[:space:]]*git-svn[[:space:]]*$/d' Tools/glib/dependencies/apt
+          # The image ships a prebaked apt index that is stale by the time any
+          # given run starts, so the versions it names have often already been
+          # superseded and their .deb URLs 404. install-dependencies does not
+          # refresh it itself, and a 404 on any single package fails the whole
+          # transaction, so refresh it here first.
+          sudo apt-get update
           sudo Tools/gtk/install-dependencies
           sudo apt-get install -y ninja-build
 
