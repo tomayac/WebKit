@@ -173,6 +173,21 @@ jobs:
           sudo apt-get clean || true
           df -h /
 
+          # A runner has 4 cores and 16 GB. Ninja defaults to cores + 2 jobs,
+          # and WebCore's unified translation units are individually huge --
+          # JSDOMWindow.cpp is the worst of them -- so several in flight at once
+          # exhaust memory and the OOM killer takes out cc1plus about an hour
+          # in, which surfaces only as "Killed signal terminated program
+          # cc1plus" with no mention of memory. Swap absorbs one monster unit
+          # without having to drop parallelism further than necessary; it goes
+          # on /mnt, which is the larger disk and not where the build tree
+          # lives.
+          sudo fallocate -l 8G /mnt/webkit-swapfile
+          sudo chmod 600 /mnt/webkit-swapfile
+          sudo mkswap /mnt/webkit-swapfile
+          sudo swapon /mnt/webkit-swapfile
+          free -h
+
       - name: Reclaim disk space (macOS)
         if: matrix.port == 'mac'
         run: |
@@ -246,7 +261,11 @@ jobs:
             # no libbacktrace-dev to install). Neither has anything to do with
             # Cross-Origin Storage, which is gated on its own WebPreferences
             # flag rather than on experimental features.
+            # -j3 rather than ninja's default of cores + 2: this is a memory
+            # limit, not a speed choice. See the swapfile note above -- the two
+            # together are what keep the OOM killer away from cc1plus.
             Tools/Scripts/build-webkit --gtk --release \
+              --makeargs="-j3" \
               --cmakeargs="-DENABLE_THUNDER=OFF -DUSE_LIBBACKTRACE=OFF"
           fi
 
