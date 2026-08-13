@@ -85,6 +85,10 @@ jobs:
           # the build dies in a WebKit header long before reaching any COS
           # code.
           #
+          # The Linux image has a floor of its own: WebKitCommon.cmake requires
+          # GCC 12.2 or newer, and ubuntu-22.04 ships GCC 11.4, so that image
+          # fails at configure time no matter which dependencies install.
+          #
           # GitHub's Intel macOS runner label has changed more than once as
           # older images are retired. If `macos-26-intel` is rejected, check
           # the runner-images repo for what's currently offered before
@@ -94,7 +98,7 @@ jobs:
           [
             {"name": "macOS arm64",      "id": "macos-arm64",  "os": "macos-26",        "port": "mac"},
             {"name": "macOS x86_64",     "id": "macos-x86_64", "os": "macos-26-intel",  "port": "mac"},
-            {"name": "Linux GTK x86_64", "id": "linux-gtk",    "os": "ubuntu-22.04",    "port": "gtk"}
+            {"name": "Linux GTK x86_64", "id": "linux-gtk",    "os": "ubuntu-24.04",    "port": "gtk"}
           ]
           PLATFORMS
           )"
