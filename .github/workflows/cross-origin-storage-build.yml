@@ -296,9 +296,14 @@ jobs:
           # launch, and the auxiliary processes live in the .xpc bundles beside
           # them. Shipping the app alone produces something that launches and
           # then immediately fails to load any page, so copy the whole set.
-          cp -R WebKitBuild/Release/MiniBrowser.app "$out/"
-          cp -R WebKitBuild/Release/*.framework "$out/"
-          cp -R WebKitBuild/Release/*.xpc "$out/" 2>/dev/null || true
+          # Ask WebKit where it built rather than assuming: the layout differs
+          # per port, and guessing it wrong is silent when the copy is allowed
+          # to fail.
+          build="$(Tools/Scripts/webkit-build-directory --release --configuration)"
+          cp -R "$build/MiniBrowser.app" "$out/"
+          cp -R "$build"/*.framework "$out/"
+          # XPC services are genuinely optional here, unlike the above.
+          cp -R "$build"/*.xpc "$out/" 2>/dev/null || true
           # The Public Hash List ships inside WebKit.framework's Resources, so
           # it comes along with the framework copy above -- but a missing list
           # fails closed silently (wildcard-scoped entries simply stop being
@@ -352,8 +357,14 @@ jobs:
           # is only usable on a distribution close to the one it was built on
           # (Ubuntu 24.04 here). That is a real limitation of shipping a bare
           # tarball rather than a Flatpak, and is called out in the README.
-          cp -R WebKitBuild/Release/bin "$out/" 2>/dev/null || true
-          cp -R WebKitBuild/Release/lib "$out/" 2>/dev/null || true
+          # A GTK build tree is WebKitBuild/GTK/Release, not WebKitBuild/Release
+          # -- and because these copies used to be written as
+          # `cp ... 2>/dev/null || true`, getting that wrong produced an empty
+          # tarball and a green build rather than any error at all. Ask WebKit
+          # for the path, and let a failed copy fail the job.
+          build="$(Tools/Scripts/webkit-build-directory --gtk --release --configuration)"
+          cp -R "$build/bin" "$out/"
+          cp -R "$build/lib" "$out/"
 
           # The Build step names explicit targets instead of building
           # everything, so a target dropped from that list would not fail the
