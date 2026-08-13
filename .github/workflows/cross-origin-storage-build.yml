@@ -25,24 +25,28 @@ run-name: Cross-Origin Storage build (macOS / Linux)
 # either can't be distributed this way or need a non-public SDK. So this
 # workflow covers macOS arm64, macOS x86_64, and Linux GTK x86_64.
 #
-# NONE OF THESE LEGS HAS BEEN RUN YET. Treat all three as best-effort until a
-# run has actually gone green -- see the disk-space note below, which is the
-# most likely reason a leg fails.
-#
 # ---------------------------------------------------------------------------
-# The disk-space problem, stated plainly
+# What a hosted runner cannot give you, learned the hard way
 #
-# A GitHub-hosted runner gives you roughly 14 GB free. A WebKit build tree is
-# much larger than that: the tree this workflow was written against measured
-# 33 GB total (6.8 GB WebCore.build, 5.4 GB WebKit.build, 5.3 GB precompiled
-# headers, 3.2 GB JavaScriptCore.build, 2.3 GB XCBuildData, 5.7 GB of actual
-# products). That figure is inflated by ~20 incremental rebuilds, so a single
-# clean build will be smaller -- but probably not 14 GB smaller.
+# Every leg here has failed at least once for a reason that has nothing to do
+# with the code being built, so the constraints are worth stating rather than
+# rediscovering:
 #
-# The steps below reclaim what they can and turn off dSYM generation, which is
-# pure overhead for a test build. If a leg still dies with a disk error, the
-# realistic options are a larger runner or a self-hosted one; there is no
-# clever flag that makes a WebKit build small.
+#   * Time. Six hours per job is GitHub's hard ceiling for hosted runners;
+#     `timeout-minutes: 360` already asks for all of it and cannot be raised.
+#     The x86_64 leg was cancelled at exactly 6h00m building targets nothing
+#     packages, which is why each platform now builds only what it ships.
+#   * Memory. 4 cores and 16 GB. WebCore's unified translation units are
+#     individually multi-gigabyte, so the default job count invites the OOM
+#     killer -- which reports itself only as "Killed signal terminated program
+#     cc1plus", with no mention of memory.
+#   * Disk. Roughly 14 GB free before the reclaim step below; a full WebKit
+#     tree is far larger. dSYM generation is off for the same reason.
+#   * Toolchain floors. WebKit needs Xcode 26.2+ and GCC 12.2+, which rules out
+#     the macos-15 and ubuntu-22.04 images outright.
+#
+# There is no flag that makes a WebKit build small. If a leg still fails on
+# resources, the honest options are a larger runner or a self-hosted one.
 # ---------------------------------------------------------------------------
 
 on:
@@ -261,11 +265,21 @@ jobs:
             # no libbacktrace-dev to install). Neither has anything to do with
             # Cross-Origin Storage, which is gated on its own WebPreferences
             # flag rather than on experimental features.
-            # -j3 rather than ninja's default of cores + 2: this is a memory
-            # limit, not a speed choice. See the swapfile note above -- the two
+            # Named targets rather than `all`, for the same reason macOS builds
+            # "Everything up to MiniBrowser": the default target also builds
+            # WebKitTestRunner, TestWebKitAPI, DumpRenderTree, ImageDiff and the
+            # JSC shells, none of which is packaged. WebKitGTK needs more than
+            # the browser binary at runtime -- the web, network and GPU
+            # processes are separate executables spawned by the library, not
+            # link-time dependencies of MiniBrowser, so leaving any of them out
+            # yields a tarball that builds cleanly and then cannot load a page.
+            # The Package step asserts they all arrived.
+            #
+            # -j3 rather than ninja's default of cores + 2 is a memory limit,
+            # not a speed choice. See the swapfile note above -- the two
             # together are what keep the OOM killer away from cc1plus.
             Tools/Scripts/build-webkit --gtk --release \
-              --makeargs="-j3" \
+              --makeargs="-j3 MiniBrowser WebProcess NetworkProcess GPUProcess" \
               --cmakeargs="-DENABLE_THUNDER=OFF -DUSE_LIBBACKTRACE=OFF"
           fi
 
@@ -336,10 +350,20 @@ jobs:
           # A GTK build's MiniBrowser links against the freshly built
           # libwebkit2gtk plus a long tail of system libraries, so this tarball
           # is only usable on a distribution close to the one it was built on
-          # (Ubuntu 22.04 here). That is a real limitation of shipping a bare
+          # (Ubuntu 24.04 here). That is a real limitation of shipping a bare
           # tarball rather than a Flatpak, and is called out in the README.
           cp -R WebKitBuild/Release/bin "$out/" 2>/dev/null || true
           cp -R WebKitBuild/Release/lib "$out/" 2>/dev/null || true
+
+          # The Build step names explicit targets instead of building
+          # everything, so a target dropped from that list would not fail the
+          # build -- it would ship a tarball that cannot load a page, and only a
+          # human running it would find out. Assert the runtime set is present.
+          for required in MiniBrowser WebKitWebProcess WebKitNetworkProcess; do
+            test -x "$out/bin/$required" \
+              || { echo "::error::$required is missing from the build; the Build step's target list is wrong."; exit 1; }
+          done
+          ls "$out/bin"
 
           # The GTK/WPE build compiles in the Public Hash List's *installed*
           # path, which does not exist in an unpacked tarball -- and a missing
@@ -362,7 +386,7 @@ jobs:
 
           Run ./run-minibrowser.sh
 
-          Built on Ubuntu 22.04 and dynamically linked against that release's
+          Built on Ubuntu 24.04 and dynamically linked against that release's
           system libraries. On a materially different distribution it will most
           likely fail to start with a missing-library error; building from
           source is the fallback there.
