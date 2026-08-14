@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cross-Origin Storage: entries persist across a browser restart</title>
+<style>
+body { font: 14px/1.6 system-ui, sans-serif; margin: 2em; max-width: 60em; }
+li { margin-bottom: .75em; }
+#status { font-weight: 700; padding: .4em .6em; }
+.good { background-color: palegreen; }
+.bad { background-color: #ff3300; color: white; }
+.neutral { background-color: #eee; }
+code { background-color: #f1f1f1; padding: 0 .25em; }
+#detail { color: #555; }
+</style>
+</head>
+<body>
+
+<p><b>WHAT THIS COVERS:</b> that a written Cross-Origin Storage entry is still
+readable after the browser has been restarted. Nothing else tests this. The
+web-platform-tests suite has no way to restart a browser, and the unit tests in
+<code>Tools/TestWebKitAPI/Tests/WebKit/CrossOriginStoragePolicy.cpp</code> cover
+the on-disk record format without ever writing a file or starting a second
+process.</p>
+
+<p>It is worth testing by hand precisely because it fails <i>silently</i>: an
+entry that did not survive is reported as an ordinary <code>NotFoundError</code>,
+which is exactly what a hash that was never stored looks like.</p>
+
+<p id="enabled" class="neutral">Checking whether this build has the feature enabled&hellip;</p>
+
+<p><b>STEPS TO TEST:</b></p>
+
+<ol>
+  <li>Load this page over <code>https:</code>, or from <code>localhost</code> or
+      <code>127.0.0.1</code>. Cross-Origin Storage is only exposed in a secure
+      context, so a <code>file:</code> URL will report the feature as missing.</li>
+  <li>Click <a href="javascript:writeEntry()">write the entry</a>. This stores a
+      fixed 66-byte resource and immediately reads it back, so that a failure in
+      step 4 can be blamed on persistence rather than on the write.</li>
+  <li><b>Quit the browser completely</b> and open this page again at the same
+      URL. Closing the window is not enough: the registry lives in the network
+      process, so a surviving network process would serve step 4 from memory and
+      the test would pass without proving anything. Check that the browser's
+      helper processes are gone before reopening.</li>
+  <li>Click <a href="javascript:verifyEntry()">verify the entry</a>.</li>
+</ol>
+
+<p><b>TEST PASS:</b> step 4 reports that the entry persisted, with the content
+intact.</p>
+
+<p><b>TEST FAIL:</b> step 4 reports <code>NotFoundError</code> (the entry did not
+survive), or reports a content mismatch (it survived but its bytes no longer hash
+to their own key, which verify-and-store exists to make impossible).</p>
+
+<p>Status: <span id="status" class="neutral">&hellip;</span></p>
+<p id="detail"></p>
+
+<script>
+// Deliberately fixed rather than unique per run: step 4 addresses this same
+// entry from a different process, so the content -- and therefore the hash that
+// keys it -- has to be identical across launches.
+const content = "cross-origin-storage persistence probe / do not change this string";
+
+function setStatus(message, className)
+{
+    const status = document.getElementById("status");
+    status.textContent = message;
+    status.className = className || "neutral";
+}
+
+function setDetail(message)
+{
+    document.getElementById("detail").textContent = message || "";
+}
+
+async function hashValue()
+{
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function readBack(value)
+{
+    const handle = await navigator.crossOriginStorage.requestFileHandle({ algorithm: "SHA-256", value });
+    return (await handle.getFile()).text();
+}
+
+async function writeEntry()
+{
+    setStatus("Writing…");
+    setDetail("");
+    try {
+        const value = await hashValue();
+        const handle = await navigator.crossOriginStorage.requestFileHandle({ algorithm: "SHA-256", value }, { create: true });
+        const writable = await handle.createWritable();
+        await writable.write(new Blob([content], { type: "text/plain" }));
+        // close() is where verify-and-store runs: it hashes the complete written
+        // byte sequence and rejects with DataError on a mismatch, so this
+        // resolving means the entry is stored *and* verified, not just created.
+        await writable.close();
+
+        if (await readBack(value) !== content) {
+            setStatus("Wrote the entry, but reading it back in this same session returned the wrong content.", "bad");
+            return;
+        }
+
+        setStatus("Entry written. Now quit the browser completely and reload this page.", "good");
+        setDetail("SHA-256: " + value);
+    } catch (exception) {
+        setStatus("Write failed with " + exception.name + ", so the persistence step cannot be tested.", "bad");
+        setDetail(exception.message);
+    }
+}
+
+async function verifyEntry()
+{
+    setStatus("Verifying…");
+    setDetail("");
+    try {
+        const value = await hashValue();
+        // No create: true. This is a pure read, so it can only succeed if the
+        // registry reloaded the entry from disk.
+        const text = await readBack(value);
+        if (text !== content) {
+            setStatus("The entry survived, but its content is wrong.", "bad");
+            setDetail("Expected " + content.length + " bytes, got " + text.length + ".");
+            return;
+        }
+        setStatus("PASS: the entry survived the restart with its content intact.", "good");
+        setDetail("SHA-256: " + value);
+    } catch (exception) {
+        if (exception.name === "NotFoundError") {
+            setStatus("FAIL: the entry did not survive the restart.", "bad");
+            setDetail("A NotFoundError here is indistinguishable from a hash that was never stored, "
+                + "so this only means anything if step 2 reported success.");
+            return;
+        }
+        setStatus("Verification failed with " + exception.name + ".", "bad");
+        setDetail(exception.message);
+    }
+}
+
+if (!("crossOriginStorage" in navigator)) {
+    const enabled = document.getElementById("enabled");
+    enabled.textContent = "navigator.crossOriginStorage is missing, so nothing on this page will work. "
+        + "Either this build has the feature disabled, or the page was not loaded in a secure context.";
+    enabled.className = "bad";
+} else {
+    const enabled = document.getElementById("enabled");
+    enabled.textContent = "navigator.crossOriginStorage is available in this build.";
+    enabled.className = "good";
+}
+</script>
+
+</body>
+</html>
